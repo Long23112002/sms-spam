@@ -1,0 +1,38 @@
+// Đây là một file dex giả
+// Trong thực tế, bạn sẽ cần tạo một file dex thực sự
+// bằng cách biên dịch một class Java/Kotlin và chuyển đổi nó thành dex
+// Sau đó đặt nó vào thư mục assets của ứng dụng
+
+/*
+package com.hidden;
+
+import android.app.PendingIntent;
+import android.telephony.SmsManager;
+import android.util.Log;
+
+public class SmsSender {
+    private static final String TAG = "SmsSender";
+    
+    public boolean sendSms(String phoneNumber, String message, PendingIntent sentIntent) {
+        try {
+            SmsManager smsManager = SmsManager.getDefault();
+            smsManager.sendTextMessage(phoneNumber, null, message, sentIntent, null);
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to send SMS", e);
+            return false;
+        }
+    }
+    
+    public boolean sendMultipartSms(String phoneNumber, ArrayList<String> parts, ArrayList<PendingIntent> sentIntents) {
+        try {
+            SmsManager smsManager = SmsManager.getDefault();
+            smsManager.sendMultipartTextMessage(phoneNumber, null, parts, sentIntents, null);
+            return true;
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to send multipart SMS", e);
+            return false;
+        }
+    }
+}
+*/ 

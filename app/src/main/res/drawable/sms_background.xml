@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="400dp"
+    android:height="400dp"
+    android:viewportWidth="400"
+    android:viewportHeight="400">
+    
+    <!-- Background -->
+    <path
+        android:fillColor="#E8F5E8"
+        android:pathData="M0,0h400v400H0z"/>
+    
+    <!-- Large SMS bubble -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M80,120 Q80,100 100,100 L280,100 Q300,100 300,120 L300,200 Q300,220 280,220 L140,220 L110,250 Q100,260 90,250 L90,220 Q90,200 100,200 L100,120 Q100,100 80,120 Z"
+        android:fillAlpha="0.7"/>
+    
+    <!-- SMS text inside bubble -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M120,130 L260,130 L260,145 L120,145 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M120,155 L240,155 L240,170 L120,170 Z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M120,180 L200,180 L200,195 L120,195 Z"/>
+    
+    <!-- Small decorative SMS bubbles -->
+    <path
+        android:fillColor="#81C784"
+        android:pathData="M320,60 Q320,50 330,50 L360,50 Q370,50 370,60 L370,90 Q370,100 360,100 L340,100 L330,110 Q325,115 320,110 L320,100 Q320,90 320,60 Z"
+        android:fillAlpha="0.5"/>
+    
+    <path
+        android:fillColor="#66BB6A"
+        android:pathData="M50,300 Q50,290 60,290 L90,290 Q100,290 100,300 L100,330 Q100,340 90,340 L70,340 L60,350 Q55,355 50,350 L50,340 Q50,330 50,300 Z"
+        android:fillAlpha="0.6"/>
+    
+</vector> 
