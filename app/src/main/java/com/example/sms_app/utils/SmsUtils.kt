@@ -365,17 +365,17 @@ object SmsUtils {
     
     fun hasRequiredPermissions(context: Context): Boolean {
         val permissions = arrayOf(
-            android.Manifest.permission.SEND_SMS,
-            android.Manifest.permission.READ_SMS,
-            android.Manifest.permission.RECEIVE_SMS,
-            android.Manifest.permission.READ_PHONE_STATE
+            Manifest.permission.SEND_SMS,
+            Manifest.permission.READ_SMS,
+            Manifest.permission.RECEIVE_SMS,
+            Manifest.permission.READ_PHONE_STATE
         )
         
         return permissions.all {
-            androidx.core.content.ContextCompat.checkSelfPermission(
+            ContextCompat.checkSelfPermission(
                 context,
                 it
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) == PackageManager.PERMISSION_GRANTED
         }
     }
     
