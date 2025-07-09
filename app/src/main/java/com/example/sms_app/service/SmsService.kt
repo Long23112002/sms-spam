@@ -1,5 +1,6 @@
 package com.example.sms_app.service
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
@@ -34,7 +35,9 @@ import com.example.sms_app.utils.SmsUtils
 import android.os.Handler
 import android.os.Looper
 import android.app.Activity
+import android.provider.Settings
 import android.telephony.SubscriptionManager
+import androidx.annotation.RequiresPermission
 
 class SmsService : Service() {
     private var serviceJob: Job? = null
@@ -56,9 +59,9 @@ class SmsService : Service() {
     private var currentProgress = 0
     private var totalMessageCount = 0
     private val serviceScope = CoroutineScope(Dispatchers.IO)
-    private val TAG = "SmsService"
 
     companion object {
+        private const val TAG = "SmsService"
         const val NOTIFICATION_ID = 1
         const val CHANNEL_ID = "SmsServiceChannel"
         const val NOTIFICATION_CHANNEL_ID = "SmsServiceChannel"
@@ -119,7 +122,7 @@ class SmsService : Service() {
     // Global attempt tracking
     private val activeAttempts = mutableMapOf<String, SmsAttempt>()
     private val attemptQueue = mutableMapOf<String, MutableList<SmsAttempt>>()
-
+    @RequiresPermission(Manifest.permission.READ_PHONE_STATE)
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "SmsService onCreate")
@@ -265,6 +268,7 @@ class SmsService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @RequiresPermission(Manifest.permission.READ_PHONE_STATE)
     private fun startSendingSms() {
         try {
             if (isRunning) return
@@ -341,7 +345,7 @@ class SmsService : Service() {
             sessionBackup.saveActiveSession(session)
 
             // Cập nhật notification để tăng mức độ ưu tiên
-            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.notify(NOTIFICATION_ID, createNotification("Bắt đầu gửi ${customers.size} tin nhắn..."))
 
             serviceScope.launch {
@@ -693,7 +697,7 @@ class SmsService : Service() {
                     attempts.add(
                         SmsAttempt(
                             requestId = requestId,
-                            phoneNumber = phoneNumber,
+                            phoneNumber = extraCleanedPhone,
                             message = message,
                             customer = customer,
                             smsManager = smsManager,
@@ -1387,6 +1391,7 @@ class SmsService : Service() {
     /**
      * Kiểm tra các cài đặt thiết bị có thể ảnh hưởng đến việc gửi SMS
      */
+    @RequiresPermission(Manifest.permission.READ_PHONE_STATE)
     private fun checkDeviceSettings(): String {
         val issues = mutableListOf<String>()
 
@@ -1397,7 +1402,7 @@ class SmsService : Service() {
             }
 
             // Kiểm tra trạng thái mạng
-            val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+            val telephonyManager = getSystemService(TELEPHONY_SERVICE) as TelephonyManager
             val networkState = telephonyManager.networkType
             if (networkState == TelephonyManager.NETWORK_TYPE_UNKNOWN) {
                 issues.add("⚠️ Không xác định được loại mạng")
@@ -1415,9 +1420,9 @@ class SmsService : Service() {
             }
 
             // Kiểm tra airplane mode
-            val airplaneMode = android.provider.Settings.Global.getInt(
+            val airplaneMode = Settings.Global.getInt(
                 contentResolver,
-                android.provider.Settings.Global.AIRPLANE_MODE_ON,
+                Settings.Global.AIRPLANE_MODE_ON,
                 0
             ) != 0
             if (airplaneMode) {
@@ -1434,7 +1439,7 @@ class SmsService : Service() {
 
         } catch (e: Exception) {
             issues.add("❌ Lỗi kiểm tra thiết bị: ${e.message}")
-            Log.e(TAG, "Error checking device settings", e)
+            Log.e(TAG, "Error checking device settings ${e.printStackTrace()}")
         }
 
         return if (issues.isEmpty()) {
