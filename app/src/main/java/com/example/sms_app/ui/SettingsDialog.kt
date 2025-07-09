@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.sms_app.data.AppSettings
+import com.example.sms_app.ui.components.AboutScreen
 
 @Composable
 fun SettingsDialog(
@@ -30,10 +31,6 @@ fun SettingsDialog(
     var intervalSeconds by remember { mutableStateOf(currentSettings.intervalBetweenSmsSeconds.toString()) }
     var maxRetry by remember { mutableStateOf(currentSettings.maxRetryAttempts.toString()) }
     var retryDelay by remember { mutableStateOf(currentSettings.retryDelaySeconds.toString()) }
-    var randomizeInterval by remember { mutableStateOf(currentSettings.randomizeInterval) }
-    var randomizeContent by remember { mutableStateOf(currentSettings.randomizeContent) }
-    var addRandomEmoji by remember { mutableStateOf(currentSettings.addRandomEmoji) }
-    var useRandomSpacing by remember { mutableStateOf(currentSettings.useRandomSpacing) }
     var minIntervalSeconds by remember { mutableStateOf(currentSettings.minIntervalSeconds.toString()) }
     var maxIntervalSeconds by remember { mutableStateOf(currentSettings.maxIntervalSeconds.toString()) }
 
@@ -104,181 +101,6 @@ fun SettingsDialog(
                             icon = Icons.Default.Schedule,
                             helper = "Khuyến nghị: 25-30 giây để tránh spam"
                         )
-                        
-                        // Thêm tùy chọn ngẫu nhiên hóa thời gian
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = randomizeInterval,
-                                onCheckedChange = { randomizeInterval = it },
-                                colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF4CAF50)
-                                )
-                            )
-                            
-                            Text(
-                                text = "Ngẫu nhiên hóa thời gian gửi",
-                                fontSize = 14.sp,
-                                modifier = Modifier.padding(start = 8.dp)
-                            )
-                        }
-                        
-                        // Khoảng thời gian ngẫu nhiên
-                        if (randomizeInterval) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                OutlinedTextField(
-                                    value = minIntervalSeconds,
-                                    onValueChange = { 
-                                        if (it.isEmpty() || (it.toIntOrNull() != null && it.toInt() >= 1)) {
-                                            minIntervalSeconds = it
-                                        }
-                                    },
-                                    label = { Text("Tối thiểu (giây)", fontSize = 12.sp) },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true
-                                )
-                                
-                                OutlinedTextField(
-                                    value = maxIntervalSeconds,
-                                    onValueChange = { 
-                                        if (it.isEmpty() || (it.toIntOrNull() != null && it.toInt() >= 1)) {
-                                            maxIntervalSeconds = it
-                                        }
-                                    },
-                                    label = { Text("Tối đa (giây)", fontSize = 12.sp) },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true
-                                )
-                            }
-                            
-                            Text(
-                                text = "Thời gian gửi sẽ ngẫu nhiên trong khoảng này",
-                                fontSize = 11.sp,
-                                color = Color.Gray,
-                                modifier = Modifier.padding(start = 4.dp, top = 4.dp)
-                            )
-                        }
-                    }
-                    
-                    Divider()
-                    
-                    // Anti-Detection Settings
-                    SettingSection(
-                        title = "🛡️ Cài đặt chống phát hiện tin nhắn tự động",
-                        icon = Icons.Default.Shield,
-                        iconColor = Color(0xFF9C27B0)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = randomizeContent,
-                                onCheckedChange = { randomizeContent = it },
-                                colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF9C27B0)
-                                )
-                            )
-                            
-                            Column(modifier = Modifier.padding(start = 8.dp)) {
-                                Text(
-                                    text = "Ngẫu nhiên hóa nội dung tin nhắn",
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Thêm ký tự ngẫu nhiên để tránh phát hiện",
-                                    fontSize = 11.sp,
-                                    color = Color.Gray
-                                )
-                            }
-                        }
-                        
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = useRandomSpacing,
-                                onCheckedChange = { useRandomSpacing = it },
-                                colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF9C27B0)
-                                )
-                            )
-                            
-                            Column(modifier = Modifier.padding(start = 8.dp)) {
-                                Text(
-                                    text = "Sử dụng khoảng cách ngẫu nhiên",
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Thêm khoảng trắng ngẫu nhiên vào tin nhắn",
-                                    fontSize = 11.sp,
-                                    color = Color.Gray
-                                )
-                            }
-                        }
-                        
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Checkbox(
-                                checked = addRandomEmoji,
-                                onCheckedChange = { addRandomEmoji = it },
-                                colors = CheckboxDefaults.colors(
-                                    checkedColor = Color(0xFF9C27B0)
-                                )
-                            )
-                            
-                            Column(modifier = Modifier.padding(start = 8.dp)) {
-                                Text(
-                                    text = "Thêm emoji ngẫu nhiên",
-                                    fontSize = 14.sp
-                                )
-                                Text(
-                                    text = "Thêm emoji vào cuối tin nhắn (có thể tăng phí)",
-                                    fontSize = 11.sp,
-                                    color = Color.Gray
-                                )
-                            }
-                        }
-                        
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(containerColor = Color(0xFFFCE4EC)),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Info,
-                                    contentDescription = null,
-                                    tint = Color(0xFFE91E63),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Text(
-                                    text = "Các tùy chọn này giúp tránh bị nhà mạng phát hiện tin nhắn tự động",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFFAD1457),
-                                    modifier = Modifier.padding(start = 8.dp)
-                                )
-                            }
-                        }
                     }
                     
                     Divider()
@@ -324,7 +146,18 @@ fun SettingsDialog(
                     ) {
                         val context = androidx.compose.ui.platform.LocalContext.current
                         val smsRepo = remember { com.example.sms_app.data.SmsRepository(context) }
-                        val availableSims = remember { com.example.sms_app.utils.SimManager.getAvailableSims(context) }
+                        
+                        // Force refresh the SMS counts when dialog opens
+                        val refreshTrigger = remember { mutableStateOf(0) }
+                        val availableSims = remember(refreshTrigger.value) { 
+                            // Force refresh SMS counts for all SIMs
+                            val sims = com.example.sms_app.utils.SimManager.getAvailableSims(context)
+                            sims.forEach { sim ->
+                                // This will refresh the count
+                                smsRepo.getSmsCountToday(sim.subscriptionId)
+                            }
+                            sims
+                        }
                         
                         Card(
                             modifier = Modifier.fillMaxWidth(),
@@ -335,12 +168,36 @@ fun SettingsDialog(
                                 modifier = Modifier.padding(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(
-                                    text = "Quản lý số lượt gửi SMS",
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1565C0)
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Quản lý số lượt gửi SMS",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1565C0)
+                                    )
+
+                                    IconButton(
+                                        onClick = {
+                                            refreshTrigger.value = refreshTrigger.value + 1
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Đã cập nhật số lượt gửi SMS",
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Làm mới",
+                                            tint = Color(0xFF1976D2)
+                                        )
+                                    }
+                                }
                                 
                                 Text(
                                     text = "Mỗi SIM có giới hạn 40 tin nhắn mỗi ngày. Khi thay SIM, bạn cần reset số lượt để đếm lại từ đầu.",
@@ -348,7 +205,7 @@ fun SettingsDialog(
                                     color = Color(0xFF1976D2)
                                 )
                                 
-                                // Hiển thị danh sách các SIM và số lượt đã gửi
+                                // Hiển thị thông tin từng SIM
                                 if (availableSims.size > 1) {
                                     Text(
                                         text = "SIM đã cài đặt trên thiết bị:",
@@ -361,116 +218,279 @@ fun SettingsDialog(
                                     // Hiển thị thông tin từng SIM
                                     availableSims.forEach { sim ->
                                         val smsCount = smsRepo.getSmsCountToday(sim.subscriptionId)
+                                        val carrierColor = when(sim.carrierName) {
+                                            "Viettel" -> Color(0xFF4CAF50)
+                                            "Mobifone" -> Color(0xFF2196F3)
+                                            "Vinaphone" -> Color(0xFFF44336)
+                                            "Vietnamobile" -> Color(0xFF607D8B)
+                                            else -> Color(0xFF9C27B0)
+                                        }
                                         
-                                        Row(
+                                        Card(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                .padding(vertical = 2.dp),
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = Color.White
+                                            ),
+                                            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                                         ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = "${sim.displayName} (${sim.carrierName})",
-                                                    fontSize = 14.sp,
-                                                    fontWeight = FontWeight.Medium
-                                                )
-                                                Text(
-                                                    text = "Đã gửi: $smsCount/40 tin hôm nay",
-                                                    fontSize = 12.sp,
-                                                    color = if (smsCount > 30) Color.Red else Color.Gray
-                                                )
-                                            }
-                                            
-                                            Button(
-                                                onClick = {
-                                                    smsRepo.resetSmsCount(sim.subscriptionId)
-                                                    android.widget.Toast.makeText(
-                                                        context,
-                                                        "Đã reset số lượt gửi cho ${sim.displayName}",
-                                                        android.widget.Toast.LENGTH_SHORT
-                                                    ).show()
-                                                },
-                                                colors = ButtonDefaults.buttonColors(
-                                                    containerColor = Color(0xFF2196F3)
-                                                ),
-                                                modifier = Modifier.padding(start = 8.dp)
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Refresh,
-                                                    contentDescription = null,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = "Reset",
-                                                    fontSize = 12.sp
-                                                )
+                                                Column(
+                                                    modifier = Modifier.weight(1f),
+                                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Text(
+                                                            text = "SIM ${sim.simSlotIndex + 1}",
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        Card(
+                                                            colors = CardDefaults.cardColors(
+                                                                containerColor = carrierColor
+                                                            ),
+                                                            modifier = Modifier.padding(horizontal = 2.dp),
+                                                            shape = RoundedCornerShape(4.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = sim.carrierName,
+                                                                fontSize = 9.sp,
+                                                                color = Color.White,
+                                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.fillMaxWidth()
+                                                    ) {
+                                                        Text(
+                                                            text = "Đã gửi: ",
+                                                            fontSize = 10.sp,
+                                                            color = Color.Gray
+                                                        )
+                                                        Text(
+                                                            text = "$smsCount/40",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = when {
+                                                                smsCount > 35 -> Color.Red
+                                                                smsCount > 25 -> Color(0xFFFF9800) // Orange
+                                                                else -> Color(0xFF4CAF50) // Green
+                                                            }
+                                                        )
+                                                        Text(
+                                                            text = " tin",
+                                                            fontSize = 10.sp,
+                                                            color = Color.Gray
+                                                        )
+                                                    }
+                                                    
+                                                    if (sim.phoneNumber?.isNotEmpty() == true) {
+                                                        Text(
+                                                            text = "SĐT: ${sim.phoneNumber}",
+                                                            fontSize = 9.sp,
+                                                            color = Color.Gray
+                                                        )
+                                                    }
+                                                }
+                                                
+                                                Button(
+                                                    onClick = {
+                                                        val success = smsRepo.resetSmsCount(sim.subscriptionId)
+                                                        // Update the refresh trigger to force UI update
+                                                        refreshTrigger.value++
+                                                        
+                                                        if (success) {
+                                                            android.widget.Toast.makeText(
+                                                                context,
+                                                                "Đã reset số lượt gửi cho SIM ${sim.simSlotIndex + 1} (${sim.carrierName})",
+                                                                android.widget.Toast.LENGTH_SHORT
+                                                            ).show()
+                                                        } else {
+                                                            android.widget.Toast.makeText(
+                                                                context,
+                                                                "Không thể reset số lượt gửi cho SIM ${sim.simSlotIndex + 1}",
+                                                                android.widget.Toast.LENGTH_SHORT
+                                                            ).show()
+                                                        }
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = carrierColor
+                                                    ),
+                                                    modifier = Modifier
+                                                        .padding(start = 4.dp)
+                                                        .height(30.dp),
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Refresh,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(2.dp))
+                                                    Text(
+                                                        text = "Reset",
+                                                        fontSize = 10.sp
+                                                    )
+                                                }
                                             }
                                         }
                                     }
-                                    
-                                    Divider(
-                                        modifier = Modifier.padding(vertical = 8.dp),
-                                        color = Color(0xFFBBDEFB)
-                                    )
                                 }
-                                
-                                // Default SIM (always show)
-                                Row(
+
+                                // Default SIM
+                                Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                        .padding(vertical = 2.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = Color(0xFFE1F5FE)
+                                    ),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "SIM Mặc định",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Medium
-                                        )
-                                        Text(
-                                            text = "Đã gửi: ${smsRepo.getSmsCountToday(-1)}/40 tin hôm nay",
-                                            fontSize = 12.sp,
-                                            color = if (smsRepo.getSmsCountToday(-1) > 30) Color.Red else Color.Gray
-                                        )
-                                    }
-                                    
-                                    Button(
-                                        onClick = {
-                                            smsRepo.resetSmsCount(-1)
-                                            android.widget.Toast.makeText(
-                                                context,
-                                                "Đã reset số lượt gửi cho SIM Mặc định",
-                                                android.widget.Toast.LENGTH_SHORT
-                                            ).show()
-                                        },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = Color(0xFF2196F3)
-                                        ),
-                                        modifier = Modifier.padding(start = 8.dp)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Refresh,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(16.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "Reset",
-                                            fontSize = 12.sp
-                                        )
+                                        Column(
+                                            modifier = Modifier.weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(
+                                                    text = "SIM Mặc định",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Card(
+                                                    colors = CardDefaults.cardColors(
+                                                        containerColor = Color(0xFF607D8B)
+                                                    ),
+                                                    modifier = Modifier.padding(horizontal = 2.dp),
+                                                    shape = RoundedCornerShape(4.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "Default",
+                                                        fontSize = 9.sp,
+                                                        color = Color.White,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                            
+                                            val defaultSmsCount = smsRepo.getSmsCountToday(-1)
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text(
+                                                    text = "Đã gửi: ",
+                                                    fontSize = 10.sp,
+                                                    color = Color.Gray
+                                                )
+                                                Text(
+                                                    text = "$defaultSmsCount/40",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = when {
+                                                        defaultSmsCount > 35 -> Color.Red
+                                                        defaultSmsCount > 25 -> Color(0xFFFF9800) // Orange
+                                                        else -> Color(0xFF4CAF50) // Green
+                                                    }
+                                                )
+                                                Text(
+                                                    text = " tin",
+                                                    fontSize = 10.sp,
+                                                    color = Color.Gray
+                                                )
+                                            }
+                                        }
+                                        
+                                        Button(
+                                            onClick = {
+                                                val success = smsRepo.resetSmsCount(-1)
+                                                // Update the refresh trigger to force UI update
+                                                refreshTrigger.value++
+                                                
+                                                if (success) {
+                                                    android.widget.Toast.makeText(
+                                                        context,
+                                                        "Đã reset số lượt gửi cho SIM mặc định",
+                                                        android.widget.Toast.LENGTH_SHORT
+                                                    ).show()
+                                                } else {
+                                                    android.widget.Toast.makeText(
+                                                        context,
+                                                        "Không thể reset số lượt gửi cho SIM mặc định",
+                                                        android.widget.Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Color(0xFF607D8B)
+                                            ),
+                                            modifier = Modifier
+                                                .padding(start = 4.dp)
+                                                .height(30.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Refresh,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(2.dp))
+                                            Text(
+                                                text = "Reset",
+                                                fontSize = 10.sp
+                                            )
+                                        }
                                     }
                                 }
                                 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 
+                                // Reset All SIMs button
                                 Button(
                                     onClick = {
                                         // Gọi hàm reset số lượt gửi SMS
-                                        smsRepo.resetAllSimCounts()
-                                        android.widget.Toast.makeText(context, "Đã reset số lượt gửi SMS cho tất cả SIM", android.widget.Toast.LENGTH_SHORT).show()
+                                        val success = smsRepo.resetAllSimCounts()
+                                        // Update the refresh trigger to force UI update
+                                        refreshTrigger.value++
+                                        
+                                        if (success) {
+                                            android.widget.Toast.makeText(
+                                                context, 
+                                                "Đã reset số lượt gửi SMS cho tất cả SIM", 
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            android.widget.Toast.makeText(
+                                                context, 
+                                                "Không thể reset số lượt gửi SMS cho tất cả SIM", 
+                                                android.widget.Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
                                     },
                                     modifier = Modifier.fillMaxWidth(),
                                     colors = ButtonDefaults.buttonColors(
@@ -496,51 +516,11 @@ fun SettingsDialog(
                     Divider()
                     
                     // Developer Info
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF3E5F5)),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Person,
-                                contentDescription = null,
-                                tint = Color(0xFF9C27B0),
-                                modifier = Modifier.size(32.dp)
-                            )
-                            
-                            Text(
-                                text = "👨‍💻 Thông tin nhà phát triển",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF7B1FA2)
-                            )
-                            
-                            Text(
-                                text = "Bình An =))",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF4A148C)
-                            )
-                            
-                            Text(
-                                text = "SMS App v1.0",
-                                fontSize = 12.sp,
-                                color = Color.Gray
-                            )
-                            
-                            Text(
-                                text = "📱 Ứng dụng gửi SMS hàng loạt\n⚡ Tự động hóa tin nhắn khách hàng",
-                                fontSize = 11.sp,
-                                color = Color(0xFF6A1B9A),
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
+                    AboutScreen(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(400.dp)
+                    )
                 }
                 
                 // Save Button

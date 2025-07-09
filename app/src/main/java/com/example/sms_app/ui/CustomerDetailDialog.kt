@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -16,6 +18,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.sms_app.data.Customer
 import com.example.sms_app.data.MessageTemplate
+import com.example.sms_app.utils.SmsUtils
+import android.util.Log
 
 @Composable
 fun CustomerDetailDialog(
@@ -24,9 +28,16 @@ fun CustomerDetailDialog(
     defaultTemplateId: Int = 1,
     onDismiss: () -> Unit
 ) {
-    // Always use default template
     val actualTemplateId = defaultTemplateId
     val selectedTemplate = templates.find { it.id == actualTemplateId }
+
+    val isPhoneNumberValid = SmsUtils.isValidPhoneNumber(customer.phoneNumber)
+    val formattedPhoneNumber = SmsUtils.validateAndFormatPhoneNumber(customer.phoneNumber)
+
+    if (!isPhoneNumberValid || formattedPhoneNumber != customer.phoneNumber) {
+        Log.w("CustomerDetailDialog", "Phone number issue detected: " +
+              "Original=${customer.phoneNumber}, Formatted=$formattedPhoneNumber, Valid=$isPhoneNumberValid")
+    }
     
     Dialog(
         onDismissRequest = onDismiss,
@@ -56,11 +67,35 @@ fun CustomerDetailDialog(
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFF2196F3)
                         )
-                        Text(
-                            text = customer.phoneNumber,
-                            fontSize = 14.sp,
-                            color = Color.Gray
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = customer.phoneNumber,
+                                fontSize = 14.sp,
+                                color = Color.Gray
+                            )
+                            
+                            // Add phone number validation icon
+                            Icon(
+                                imageVector = if (isPhoneNumberValid) 
+                                    Icons.Default.CheckCircle else Icons.Default.Error,
+                                contentDescription = if (isPhoneNumberValid) 
+                                    "Số điện thoại hợp lệ" else "Số điện thoại không hợp lệ",
+                                tint = if (isPhoneNumberValid) Color(0xFF4CAF50) else Color(0xFFF44336),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        
+                        // Show warning if phone number is not in expected format
+                        if (!isPhoneNumberValid) {
+                            Text(
+                                text = "⚠️ Số điện thoại không đúng định dạng VN",
+                                fontSize = 12.sp,
+                                color = Color(0xFFFF9800)
+                            )
+                        }
                     }
                     
                     IconButton(onClick = onDismiss) {
@@ -128,6 +163,41 @@ fun CustomerDetailDialog(
                             modifier = Modifier.padding(16.dp),
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
+                    }
+                }
+                
+                // Show phone number information for troubleshooting
+                if (!isPhoneNumberValid) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEEEE))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "Thông tin lỗi số điện thoại:",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFF44336)
+                            )
+                            Text(
+                                text = "Định dạng hiện tại: ${customer.phoneNumber}",
+                                fontSize = 12.sp,
+                                color = Color(0xFF424242)
+                            )
+                            Text(
+                                text = "Định dạng đề xuất: $formattedPhoneNumber",
+                                fontSize = 12.sp,
+                                color = Color(0xFF4CAF50)
+                            )
+                            Text(
+                                text = "SMS có thể không gửi được do số điện thoại không đúng định dạng.",
+                                fontSize = 12.sp,
+                                color = Color(0xFFF44336)
+                            )
+                        }
                     }
                 }
                 

@@ -67,9 +67,6 @@ import java.io.File
 import timber.log.Timber
 import android.os.Environment
 import android.provider.Settings
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 // SmsApplication đã được chuyển sang file riêng
 
@@ -85,28 +82,24 @@ class MainActivity : ComponentActivity() {
     
     private val smsProgressReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            Log.d("MainActivity", "📡 Received broadcast: ${intent?.action}")
             when (intent?.action) {
                 SmsService.ACTION_PROGRESS_UPDATE -> {
                     val progress = intent.getIntExtra(SmsService.EXTRA_PROGRESS, 0)
                     val total = intent.getIntExtra(SmsService.EXTRA_TOTAL, 0)
                     val message = intent.getStringExtra(SmsService.EXTRA_MESSAGE) ?: ""
-
-                    Log.d("MainActivity", "📊 Progress update: $progress/$total - $message")
+                    
                     CoroutineScope(Dispatchers.Main).launch {
                         progressFlow.emit(SmsProgress(progress, total, message))
                     }
                 }
                 SmsService.ACTION_SMS_COMPLETED -> {
                     val message = intent.getStringExtra(SmsService.EXTRA_MESSAGE) ?: "Hoàn thành gửi SMS"
-                    Log.d("MainActivity", "🏁 SMS completed: $message")
                     CoroutineScope(Dispatchers.Main).launch {
                         completionFlow.emit(message)
                     }
                 }
                 SmsService.ACTION_CUSTOMER_DELETED -> {
                     val customerId = intent.getStringExtra(SmsService.EXTRA_CUSTOMER_ID)
-                    Log.d("MainActivity", "🗑️ Customer deleted: $customerId")
                     if (customerId != null) {
                         CoroutineScope(Dispatchers.Main).launch {
                             customerDeletionFlow.emit(customerId)
@@ -122,10 +115,9 @@ class MainActivity : ComponentActivity() {
     ) { permissions ->
         val allGranted = permissions.all { it.value }
         if (allGranted) {
-            Toast.makeText(this, "✅ Đã cấp quyền SMS thành công!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Đã cấp quyền SMS", Toast.LENGTH_SHORT).show()
         } else {
-            val deniedPermissions = permissions.filter { !it.value }.keys
-            showPermissionDeniedDialog(deniedPermissions.toList())
+            Toast.makeText(this, "Cần quyền SMS để hoạt động", Toast.LENGTH_LONG).show()
         }
     }
     
@@ -171,9 +163,6 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        // Yêu cầu quyền SMS ngay khi khởi động ứng dụng
-        checkAndRequestPermissions()
-        
         // Xin quyền đọc/ghi bộ nhớ ngoài để lưu log
         checkAndRequestStoragePermissions()
         
@@ -228,7 +217,6 @@ class MainActivity : ComponentActivity() {
         } else {
             registerReceiver(smsProgressReceiver, intentFilter)
         }
-        Log.d("MainActivity", "📡 Broadcast receiver registered")
     }
     
     override fun onPause() {
@@ -236,9 +224,8 @@ class MainActivity : ComponentActivity() {
         // Unregister broadcast receiver
         try {
             unregisterReceiver(smsProgressReceiver)
-            Log.d("MainActivity", "📡 Broadcast receiver unregistered")
         } catch (e: Exception) {
-            Log.w("MainActivity", "📡 Receiver might not be registered: ${e.message}")
+            // Receiver might not be registered
         }
     }
     
@@ -264,37 +251,8 @@ class MainActivity : ComponentActivity() {
             }
             
             if (permissionsToRequest.isNotEmpty()) {
-                // Hiển thị dialog giải thích trước khi yêu cầu quyền
-                val permissionNames = permissionsToRequest.map { permission ->
-                    when (permission) {
-                        Manifest.permission.SEND_SMS -> "Gửi SMS"
-                        Manifest.permission.READ_SMS -> "Đọc SMS"
-                        Manifest.permission.RECEIVE_SMS -> "Nhận SMS"
-                        Manifest.permission.READ_PHONE_STATE -> "Đọc trạng thái điện thoại"
-                        else -> permission
-                    }
-                }
-                
-                val message = "Ứng dụng cần các quyền sau để hoạt động:\n\n" +
-                        "• ${permissionNames.joinToString("\n• ")}\n\n" +
-                        "Vui lòng cấp quyền để ứng dụng hoạt động đúng chức năng."
-                
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Yêu cầu quyền")
-                    .setMessage(message)
-                    .setPositiveButton("Cấp quyền") { _, _ ->
-                        Log.d("MainActivity", "Requesting permissions: ${permissionsToRequest.joinToString()}")
-                        requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
-                    }
-                    .setNegativeButton("Để sau") { _, _ ->
-                        Toast.makeText(
-                            this,
-                            "⚠️ Ứng dụng cần quyền SMS để hoạt động đúng chức năng",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                    .setCancelable(false)
-                    .show()
+                Log.d("MainActivity", "Requesting permissions: ${permissionsToRequest.joinToString()}")
+                requestPermissionLauncher.launch(permissionsToRequest.toTypedArray())
             } else {
                 Log.d("MainActivity", "All required permissions already granted")
             }
@@ -346,49 +304,16 @@ class MainActivity : ComponentActivity() {
     }
     
     private fun startSmsService(templateId: Int) {
-        // Kiểm tra quyền SMS trước khi bắt đầu
-        if (!SmsUtils.hasRequiredPermissions(this)) {
-            Toast.makeText(this, "⚠️ Ứng dụng chưa được cấp đủ quyền SMS. Vui lòng cấp quyền trong cài đặt.", Toast.LENGTH_LONG).show()
-            // Mở cài đặt ứng dụng thay vì yêu cầu lại quyền
-            try {
-                val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                intent.data = android.net.Uri.parse("package:$packageName")
-                startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(this, "Không thể mở cài đặt", Toast.LENGTH_SHORT).show()
-            }
-            return
-        }
-
         // Kiểm tra xem thiết bị có phải là máy ảo không
         // Comment lại để chạy thử trên máy ảo
         /*if (SmsUtils.isEmulator(this)) {
             Toast.makeText(this, "Không thể gửi SMS trên máy ảo", Toast.LENGTH_LONG).show()
             return
         }*/
-
+        
         // Load settings ngay khi bắt đầu gửi SMS
         val currentSettings = smsRepository.getAppSettings()
         android.util.Log.d("MainActivity", "Starting SMS service with settings: interval=${currentSettings.intervalBetweenSmsSeconds}s")
-        
-        // Kiểm tra template có tồn tại và có nội dung không
-        val template = smsRepository.getMessageTemplates().find { it.id == templateId }
-        if (template == null) {
-            Toast.makeText(this, "⚠️ Không tìm thấy template ID: $templateId", Toast.LENGTH_LONG).show()
-            return
-        }
-        
-        if (template.content.isBlank()) {
-            Toast.makeText(this, "⚠️ Template ${template.description} không có nội dung. Vui lòng cập nhật template trước khi gửi.", Toast.LENGTH_LONG).show()
-            return
-        }
-        
-        // Kiểm tra đã chọn khách hàng chưa
-        val selectedCustomers = smsRepository.getCustomers().filter { it.isSelected }
-        if (selectedCustomers.isEmpty()) {
-            Toast.makeText(this, "⚠️ Vui lòng chọn ít nhất một khách hàng trước khi gửi SMS", Toast.LENGTH_LONG).show()
-            return
-        }
         
         val intent = Intent(this, SmsService::class.java)
         intent.putExtra(SmsService.EXTRA_TEMPLATE_ID, templateId)
@@ -401,45 +326,6 @@ class MainActivity : ComponentActivity() {
     private fun stopSmsService() {
         val intent = Intent(this, SmsService::class.java)
         stopService(intent)
-    }
-
-    private fun showPermissionDeniedDialog(deniedPermissions: List<String>) {
-        val permissionNames = deniedPermissions.map { permission ->
-            when (permission) {
-                Manifest.permission.SEND_SMS -> "Gửi SMS"
-                Manifest.permission.READ_SMS -> "Đọc SMS"
-                Manifest.permission.RECEIVE_SMS -> "Nhận SMS"
-                Manifest.permission.READ_PHONE_STATE -> "Đọc trạng thái điện thoại"
-                else -> permission
-            }
-        }
-
-        val message = "Ứng dụng cần các quyền sau để hoạt động:\n\n" +
-                "❌ ${permissionNames.joinToString("\n❌ ")}\n\n" +
-                "Vui lòng vào Cài đặt > Ứng dụng > SMS App > Quyền để cấp quyền."
-
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Quyền bị từ chối")
-            .setMessage(message)
-            .setPositiveButton("Mở cài đặt") { _, _ ->
-                // Mở cài đặt ứng dụng
-                try {
-                    val intent = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                    intent.data = android.net.Uri.parse("package:$packageName")
-                    startActivity(intent)
-                } catch (e: Exception) {
-                    Toast.makeText(this, "Không thể mở cài đặt", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("Để sau") { _, _ ->
-                Toast.makeText(
-                    this,
-                    "⚠️ Ứng dụng cần quyền SMS để hoạt động đúng chức năng",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-            .setCancelable(false)
-            .show()
     }
 }
 
@@ -478,9 +364,9 @@ fun SmsApp(
     var isSending by remember { mutableStateOf(false) }
     var sendingProgress by remember { mutableStateOf(0) }
     var totalToSend by remember { mutableStateOf(0) }
+    var countdownSeconds by remember { mutableStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
     var templates by remember { mutableStateOf(smsRepository.getTemplates()) }
-    var countdownTime by remember { mutableStateOf(0) }
     
     // File picker launcher for Excel export
     val exportLauncher = rememberLauncherForActivityResult(
@@ -576,53 +462,8 @@ fun SmsApp(
         progressFlow.collect { progress ->
             sendingProgress = progress.progress
             totalToSend = progress.total
-            
-            // Cập nhật UI với thông tin mới nhất
-            if (progress.message.contains("Còn lại:")) {
-                try {
-                    // Kiểm tra xem thông báo có chứa thông tin về tổng thời gian không
-                    if (progress.message.contains("Tổng:")) {
-                        // Trích xuất thời gian đếm ngược cho tin nhắn hiện tại
-                        val timePattern = "Còn lại: (\\d+)s".toRegex()
-                        val matchResult = timePattern.find(progress.message)
-                        val extractedTime = matchResult?.groupValues?.get(1)?.toIntOrNull()
-                        
-                        // Trích xuất tổng thời gian còn lại
-                        val totalTimePattern = "Tổng: (\\d+)m:(\\d+)s".toRegex()
-                        val totalMatchResult = totalTimePattern.find(progress.message)
-                        val totalMinutes = totalMatchResult?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                        val totalSeconds = totalMatchResult?.groupValues?.get(2)?.toIntOrNull() ?: 0
-                        
-                        // Tính tổng thời gian còn lại tính bằng giây
-                        val totalRemainingTime = totalMinutes * 60 + totalSeconds
-                        
-                        if (extractedTime != null) {
-                            Log.d("MainActivity", "⏱️ Countdown for current message: ${extractedTime}s")
-                            Log.d("MainActivity", "⏱️ Total remaining time: ${totalMinutes}m:${totalSeconds}s (${totalRemainingTime}s)")
-                            
-                            // Cập nhật biến state để hiển thị trong UI
-                            countdownTime = extractedTime
-                        }
-                    } else {
-                        // Xử lý theo cách cũ nếu không có thông tin tổng thời gian
-                        val timePattern = "Còn lại: (\\d+)s".toRegex()
-                        val matchResult = timePattern.find(progress.message)
-                        val extractedTime = matchResult?.groupValues?.get(1)?.toIntOrNull()
-                        
-                        if (extractedTime != null) {
-                            Log.d("MainActivity", "⏱️ Countdown between messages: ${extractedTime}s")
-                            countdownTime = extractedTime
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e("MainActivity", "Lỗi khi trích xuất thời gian đếm ngược: ${e.message}")
-                }
-            }
-            
-            // Chỉ đánh dấu hoàn thành khi đã gửi hết tất cả tin nhắn
-            if (progress.progress >= progress.total && progress.total > 0) {
-                Log.d("MainActivity", "🏁 SMS sending complete based on progress: $progress")
-                // Không set isSending = false ở đây, để đợi thông báo hoàn thành từ service
+            if (progress.progress >= progress.total) {
+                isSending = false
             }
         }
     }
@@ -630,88 +471,30 @@ fun SmsApp(
     // Listen to SMS completion
     LaunchedEffect(Unit) {
         completionFlow.collect { message ->
-            Log.d("MainActivity", "🏁 SMS sending complete: $message")
-            // Đảm bảo UI loading được tắt khi nhận thông báo hoàn thành
             isSending = false
             Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-        }
-    }
-
-    // Check service state periodically to detect disconnected service
-    LaunchedEffect(key1 = isSending) {
-        if (isSending) {
-            while (true) {
-                delay(5000) // Check every 5 seconds
-                if (!isServiceRunning(context, SmsService::class.java) && isSending) {
-                    // Service is not running but UI still shows sending state
-                    // Không tự động dừng UI khi service dừng, để service tự gửi thông báo hoàn thành
-                    Log.d("MainActivity", "🔍 Service stopped but waiting for completion message")
-                    
-                    // Chỉ hiển thị thông báo log, không hiển thị Toast
-                    // Không làm gì thêm, đợi thông báo hoàn thành từ service
-                }
-            }
-        }
-    }
-
-    // Fallback timeout để tránh UI bị treo vô hạn
-    LaunchedEffect(isSending) {
-        if (isSending) {
-            // Thêm timeout ngắn hơn (5 phút) để kiểm tra trạng thái
-            delay(5 * 60 * 1000L) // 5 phút timeout
-            
-            // Nếu vẫn đang gửi, kiểm tra service có còn chạy không
-            if (isSending) {
-                if (!isServiceRunning(context, SmsService::class.java)) {
-                    // Service đã dừng nhưng UI vẫn hiển thị đang gửi
-                    Log.w("MainActivity", "⏰ Service stopped but UI still showing sending state after 5 minutes")
-                    isSending = false
-                    Toast.makeText(
-                        context, 
-                        "⚠️ Dịch vụ gửi SMS đã dừng nhưng không nhận được thông báo hoàn thành", 
-                        Toast.LENGTH_LONG
-                    ).show()
-                } else {
-                    // Service vẫn đang chạy, đợi thêm 5 phút nữa
-                    delay(5 * 60 * 1000L) // Thêm 5 phút nữa
-                    
-                    // Nếu sau 10 phút vẫn đang gửi, buộc dừng
-                    if (isSending) {
-                        Log.w("MainActivity", "⏰ UI timeout fallback triggered after 10 minutes")
-                        isSending = false
-                        Toast.makeText(
-                            context, 
-                            "⏰ Timeout: Dừng gửi SMS sau 10 phút", 
-                            Toast.LENGTH_LONG
-                        ).show()
-                        onAction(SmsAppAction.StopService)
-                    }
-                }
-            }
         }
     }
     
     // Listen to customer deletion
     LaunchedEffect(Unit) {
         customerDeletionFlow.collect { customerId ->
-            Log.d("MainActivity", "📣 Nhận thông báo xóa khách hàng ID: $customerId")
-            try {
-                // Lấy danh sách khách hàng hiện tại
-                val currentCustomers = customers
-                
-                // Kiểm tra xem khách hàng có tồn tại không
-                val customerExists = currentCustomers.any { it.id == customerId }
-                if (customerExists) {
-                    Log.d("MainActivity", "🗑️ Xóa khách hàng ID: $customerId khỏi UI")
-                    // Cập nhật danh sách khách hàng
-                    customers = currentCustomers.filter { it.id != customerId }
-                    // Lưu danh sách mới
-                    smsRepository.saveCustomers(customers)
-                } else {
-                    Log.d("MainActivity", "⚠️ Khách hàng ID: $customerId không tồn tại trong UI")
-                }
-            } catch (e: Exception) {
-                Log.e("MainActivity", "❌ Lỗi khi xóa khách hàng từ UI: ${e.message ?: "Lỗi không xác định"}", e)
+            customers = customers.filter { it.id != customerId }
+        }
+    }
+    
+    // Countdown timer effect
+    LaunchedEffect(isSending, sendingProgress, totalToSend) {
+        if (isSending && sendingProgress < totalToSend) {
+            val remainingMessages = totalToSend - sendingProgress
+            // Sử dụng settings thực tế thay vì 25 giây cố định
+            val currentSettings = smsRepository.getAppSettings()
+            val timeRemaining = remainingMessages * currentSettings.intervalBetweenSmsSeconds
+            countdownSeconds = timeRemaining
+            
+            while (countdownSeconds > 0 && isSending) {
+                delay(1000)
+                countdownSeconds--
             }
         }
     }
@@ -993,11 +776,7 @@ fun SmsApp(
                     
                     // Progress bar
                     LinearProgressIndicator(
-                        progress = if (totalToSend > 0) {
-                            sendingProgress.toFloat() / totalToSend.toFloat()
-                        } else {
-                            0f
-                        },
+                        progress = if (totalToSend > 0) sendingProgress.toFloat() / totalToSend.toFloat() else 0f,
                         modifier = Modifier.fillMaxWidth(),
                         color = Color.Blue,
                         trackColor = Color.LightGray
@@ -1014,89 +793,13 @@ fun SmsApp(
                             color = Color.Gray
                         )
                         
-                        // Hiển thị thời gian còn lại
-                        val remainingText = if (countdownTime > 0) {
-                            // Nếu có đếm ngược giữa các tin nhắn, hiển thị thời gian đó
-                            "Còn lại: ${countdownTime}s"
-                        } else {
-                            // Nếu không có đếm ngược, hiển thị thời gian dự kiến hoàn thành
-                            val currentSettings = smsRepository.getAppSettings()
-                            val interval = currentSettings?.intervalBetweenSmsSeconds ?: 30
-                            val remainingCustomers = totalToSend - sendingProgress
-                            val totalRemainingSeconds = remainingCustomers * interval
-                            val remainingMinutes = totalRemainingSeconds / 60
-                            val remainingSeconds = totalRemainingSeconds % 60
-                            
-                            if (remainingCustomers > 0)
-                                "Còn lại: ${remainingMinutes}m:${remainingSeconds.toString().padStart(2, '0')}s"
-                            else
-                                "Đã hoàn thành!"
-                        }
-                        
+                        val minutes = countdownSeconds / 60
+                        val seconds = countdownSeconds % 60
                         Text(
-                            text = remainingText,
+                            text = "Còn lại: ${minutes}:${seconds.toString().padStart(2, '0')}",
                             fontSize = 12.sp,
                             color = Color.Red,
                             fontWeight = FontWeight.Bold
-                        )
-                    }
-                    
-                    // Thêm dòng hiển thị thời gian hoàn thành dự kiến
-                    if (sendingProgress > 0 && totalToSend > sendingProgress) {
-                        // Tính tổng thời gian còn lại cho tất cả tin nhắn
-                        val currentSettings = smsRepository.getAppSettings()
-                        val interval = currentSettings?.intervalBetweenSmsSeconds ?: 30
-                        val remainingCustomers = totalToSend - sendingProgress
-                        val totalRemainingSeconds = remainingCustomers * interval
-                        val totalRemainingMinutes = totalRemainingSeconds / 60
-                        val totalRemainingSecondsDisplay = totalRemainingSeconds % 60
-                        
-                        // Hiển thị tổng thời gian còn lại
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = "Tổng thời gian còn lại: ${totalRemainingMinutes}m:${totalRemainingSecondsDisplay.toString().padStart(2, '0')}s",
-                                fontSize = 12.sp,
-                                color = Color(0xFFFF9800),
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                        
-                        // Tính thời gian hoàn thành theo giờ địa phương
-                        val calendar = java.util.Calendar.getInstance()
-                        calendar.add(java.util.Calendar.SECOND, totalRemainingSeconds.toInt())
-                        val completionTime = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(calendar.time)
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Text(
-                                text = "Dự kiến hoàn thành lúc: $completionTime",
-                                fontSize = 12.sp,
-                                color = Color(0xFF2196F3),
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                    
-                    // Hiển thị thông tin về thời gian giữa các lần gửi
-                    val currentSettings = smsRepository.getAppSettings()
-                    val interval = currentSettings?.intervalBetweenSmsSeconds ?: 25
-                    
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = "⏱️ Thời gian chờ giữa các tin nhắn: ${interval}s",
-                            fontSize = 12.sp,
-                            color = Color(0xFFFF9800),
-                            fontWeight = FontWeight.Medium
                         )
                     }
                     
@@ -1248,10 +951,8 @@ fun SmsApp(
             defaultTemplateId = defaultTemplateId,
             onDismiss = { showTemplateSelectionDialog = false },
             onConfirm = { templateId ->
-                Log.d("MainActivity", "🔄 Template selected: $templateId")
-                pendingTemplateId = templateId
-                Log.d("MainActivity", "✅ pendingTemplateId set to: $pendingTemplateId")
                 showTemplateSelectionDialog = false
+                pendingTemplateId = templateId
                 showConfirmSendDialog = true
             }
         )
@@ -1459,52 +1160,12 @@ fun SmsApp(
                         val selectedSim = smsRepository.getSelectedSim()
                         val smsCount = smsRepository.getSmsCountToday(selectedSim)
                         val simName = if (selectedSim == -1) "Default SIM" else "SIM $selectedSim"
-                        
-                        // Lưu lại templateId trước khi xóa pendingTemplateId
-                        val templateIdToSend = pendingTemplateId
-                        Log.d("MainActivity", "📋 Template ID to send: $templateIdToSend")
-                        
-                        // Tạo backup session ngay khi người dùng xác nhận gửi
-                        if (templateIdToSend != null) {
-                            val selectedCustomers = customers.filter { it.isSelected }
-                            Log.d("MainActivity", "💾 Tạo backup session với ${selectedCustomers.size} khách hàng")
-                            
-                            // Đảm bảo lưu tất cả khách hàng vào session backup trước khi bắt đầu gửi
-                            sessionBackup.saveActiveSession(templateIdToSend, selectedCustomers)
-                            
-                            // Thêm một nhật ký để xác nhận đã lưu
-                            Log.d("MainActivity", "✅ Đã lưu backup session thành công với ${selectedCustomers.size} khách hàng")
-                            
-                            // Hiển thị thông báo đã lưu backup
-                            Toast.makeText(
-                                context,
-                                "Đã lưu ${selectedCustomers.size} khách hàng vào backup",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                        
-                        // Bắt đầu gửi SMS ngay lập tức, không cần đếm ngược nữa
                         Toast.makeText(
                             context,
                             "Bắt đầu gửi $selectedCount tin nhắn ($simName: $smsCount/40 tin hôm nay)",
                             Toast.LENGTH_SHORT
                         ).show()
-                        
-                        // Kiểm tra null trước khi sử dụng - dùng templateIdToSend đã lưu trước đó
-                        if (templateIdToSend != null) {
-                            Log.d("MainActivity", "🚀 Starting service with template ID: $templateIdToSend")
-                            onAction(SmsAppAction.StartService(templateIdToSend))
-                        } else {
-                            Log.e("MainActivity", "Lỗi: templateIdToSend là null")
-                            Toast.makeText(
-                                context,
-                                "Lỗi: Không thể xác định template",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            isSending = false
-                        }
-                        
-                        // Chỉ xóa pendingTemplateId sau khi đã lưu giá trị
+                        onAction(SmsAppAction.StartService(pendingTemplateId!!))
                         pendingTemplateId = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
@@ -1534,7 +1195,7 @@ fun SmsApp(
             onDismissRequest = { showBackupDialog = false },
             title = { 
                 Text(
-                    text = "Quản lý phiên gửi SMS",
+                    text = "Khôi phục phiên làm việc",
                     fontWeight = FontWeight.Bold
                 ) 
             },
@@ -1588,34 +1249,17 @@ fun SmsApp(
                                             // Khôi phục danh sách khách hàng từ session
                                             val remainingCustomers = activeSession.remainingCustomers.map { it.copy(isSelected = true) }
                                             val currentCustomers = smsRepository.getCustomers()
-                                            
-                                            // Tạo danh sách mới bao gồm khách hàng hiện tại và khách hàng từ backup
-                                            val updatedCustomers = currentCustomers.toMutableList()
-                                            
-                                            // Thêm khách hàng từ backup nếu chưa tồn tại trong danh sách hiện tại
-                                            remainingCustomers.forEach { backupCustomer ->
-                                                val exists = currentCustomers.any { it.id == backupCustomer.id }
-                                                if (!exists) {
-                                                    // Thêm khách hàng mới vào danh sách
-                                                    updatedCustomers.add(backupCustomer)
-                                                    Log.d("MainActivity", "Thêm khách hàng mới từ backup: ${backupCustomer.name}")
-                                                }
-                                            }
-                                            
-                                            // Đánh dấu tất cả khách hàng từ backup là selected
-                                            val finalCustomers = updatedCustomers.map { customer ->
+                                            val restoredCustomers = currentCustomers.map { customer ->
                                                 val shouldSelect = remainingCustomers.any { it.id == customer.id }
-                                                customer.copy(isSelected = if (shouldSelect) true else customer.isSelected)
+                                                customer.copy(isSelected = shouldSelect)
                                             }
-                                            
-                                            // Cập nhật danh sách khách hàng
-                                            customers = finalCustomers
+                                            customers = restoredCustomers
                                             smsRepository.saveCustomers(customers)
                                             
                                             showBackupDialog = false
                                             Toast.makeText(
                                                 context,
-                                                "Đã khôi phục ${remainingCustomers.size} khách hàng từ backup",
+                                                "Đã khôi phục ${remainingCustomers.size} khách hàng chưa gửi",
                                                 Toast.LENGTH_LONG
                                             ).show()
                                         },
@@ -1640,7 +1284,7 @@ fun SmsApp(
                         }
                     } else {
                         Text(
-                            text = "Không có phiên làm việc nào đang chạy",
+                            text = "Không có phiên làm việc nào để khôi phục",
                             fontSize = 14.sp,
                             color = Color.Gray,
                             modifier = Modifier.padding(16.dp)
@@ -1650,252 +1294,38 @@ fun SmsApp(
                     if (sessionHistory.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(16.dp))
                         
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "📋 Lịch sử phiên gửi SMS:",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF424242)
-                            )
-                            
-                            Text(
-                                text = "(${sessionHistory.size} phiên)",
-                                fontSize = 10.sp,
-                                color = Color(0xFF757575)
-                            )
-                        }
+                        Text(
+                            text = "📋 Lịch sử gần đây:",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF424242)
+                        )
                         
-                        // Sử dụng LazyColumn với chiều cao linh hoạt hơn
                         LazyColumn(
-                            modifier = Modifier
-                                .height(250.dp)
-                                .padding(top = 8.dp)
+                            modifier = Modifier.height(150.dp)
                         ) {
-                            items(sessionHistory) { session ->
+                            items(sessionHistory.take(5)) { session ->
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(vertical = 2.dp)
-                                        .clickable {
-                                            // Hiển thị dialog xác nhận khôi phục từ phiên lịch sử
-                                            val remainingCount = session.remainingCustomers.size
-                                            val statusText = when (session.status) {
-                                                "Hoàn thành" -> "hoàn thành"
-                                                "Thất bại" -> "thất bại"
-                                                else -> "đang xử lý"
-                                            }
-                                            
-                                            if (remainingCount > 0 || session.status == "Thất bại") {
-                                                val message = if (session.status == "Thất bại") {
-                                                    "Khôi phục ${session.remainingCustomers.size + 1} khách hàng từ phiên $statusText?"
-                                                } else {
-                                                    "Khôi phục ${session.remainingCustomers.size} khách hàng từ phiên $statusText?"
-                                                }
-                                                
-                                                // Hiển thị dialog xác nhận
-                                                val confirmDialog = android.app.AlertDialog.Builder(context)
-                                                    .setTitle("Khôi phục phiên")
-                                                    .setMessage(message)
-                                                    .setPositiveButton("Khôi phục") { _, _ ->
-                                                        // Khôi phục danh sách khách hàng từ phiên lịch sử
-                                                        val customersToRestore = sessionBackup.restoreCustomersFromSession(session.sessionId)
-                                                        if (customersToRestore.isNotEmpty()) {
-                                                            val currentCustomers = smsRepository.getCustomers()
-                                                            
-                                                            // Tạo danh sách mới bao gồm khách hàng hiện tại và khách hàng từ backup
-                                                            val updatedCustomers = currentCustomers.toMutableList()
-                                                            
-                                                            // Thêm khách hàng từ backup nếu chưa tồn tại trong danh sách hiện tại
-                                                            var newCustomersCount = 0
-                                                            customersToRestore.forEach { backupCustomer ->
-                                                                val exists = currentCustomers.any { it.id == backupCustomer.id }
-                                                                if (!exists) {
-                                                                    // Thêm khách hàng mới vào danh sách
-                                                                    updatedCustomers.add(backupCustomer)
-                                                                    newCustomersCount++
-                                                                    Log.d("MainActivity", "Thêm khách hàng mới từ history: ${backupCustomer.name}")
-                                                                }
-                                                            }
-                                                            
-                                                            // Đánh dấu tất cả khách hàng từ backup là selected
-                                                            val finalCustomers = updatedCustomers.map { customer ->
-                                                                val shouldSelect = customersToRestore.any { it.id == customer.id }
-                                                                customer.copy(isSelected = if (shouldSelect) true else customer.isSelected)
-                                                            }
-                                                            
-                                                            // Cập nhật danh sách khách hàng
-                                                            customers = finalCustomers
-                                                            smsRepository.saveCustomers(customers)
-                                                            
-                                                            val message = if (newCustomersCount > 0) {
-                                                                "Đã khôi phục ${customersToRestore.size} khách hàng (${newCustomersCount} khách hàng mới)"
-                                                            } else {
-                                                                "Đã khôi phục ${customersToRestore.size} khách hàng từ phiên lịch sử"
-                                                            }
-                                                            
-                                                            Toast.makeText(
-                                                                context,
-                                                                message,
-                                                                Toast.LENGTH_LONG
-                                                            ).show()
-                                                            
-                                                            // Đóng dialog backup sau khi khôi phục thành công
-                                                            showBackupDialog = false
-                                                        } else {
-                                                            Toast.makeText(
-                                                                context,
-                                                                "Không có khách hàng nào để khôi phục",
-                                                                Toast.LENGTH_SHORT
-                                                            ).show()
-                                                        }
-                                                    }
-                                                    .setNegativeButton("Hủy", null)
-                                                    .create()
-                                                
-                                                confirmDialog.show()
-                                            } else {
-                                                Toast.makeText(
-                                                    context,
-                                                    "Phiên này không có khách hàng nào để khôi phục",
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
-                                            }
-                                        },
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = when (session.status) {
-                                            "Hoàn thành" -> Color(0xFFE8F5E9) // Xanh nhạt
-                                            "Thất bại" -> Color(0xFFFFEBEE) // Đỏ nhạt
-                                            else -> Color(0xFFF5F5F5) // Xám nhạt
-                                        }
-                                    )
+                                        .padding(vertical = 2.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F5F5))
                                 ) {
-                                    Column(
-                                        modifier = Modifier.padding(8.dp)
-                                    ) {
-                                        Text(
-                                            text = sessionBackup.getSessionSummary(session),
-                                            fontSize = 10.sp,
-                                            fontWeight = FontWeight.Medium,
-                                            color = Color(0xFF616161)
-                                        )
-                                        
-                                        if (session.status == "Thất bại" && session.failedReason.isNotEmpty()) {
-                                            Text(
-                                                text = "Lý do: ${session.failedReason}",
-                                                fontSize = 9.sp,
-                                                color = Color.Red
-                                            )
-                                        }
-                                        
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(
-                                                text = "Template: ${session.templateId}",
-                                                fontSize = 9.sp,
-                                                color = Color(0xFF757575)
-                                            )
-                                            
-                                            val dateFormat = SimpleDateFormat("dd/MM HH:mm", Locale.getDefault())
-                                            val startDate = dateFormat.format(Date(session.startTime))
-                                            Text(
-                                                text = startDate,
-                                                fontSize = 9.sp,
-                                                color = Color(0xFF757575)
-                                            )
-                                        }
-                                        
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            if (session.remainingCustomers.isNotEmpty() || session.status == "Thất bại") {
-                                                val count = if (session.status == "Thất bại" && session.failedCustomerId.isNotEmpty()) 
-                                                    session.remainingCustomers.size + 1 
-                                                else 
-                                                    session.remainingCustomers.size
-                                                    
-                                                Text(
-                                                    text = "👆 Nhấn để khôi phục $count khách hàng",
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = Color(0xFF1976D2),
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                            } else {
-                                                Spacer(modifier = Modifier.weight(1f))
-                                            }
-                                            
-                                            // Nút xóa phiên làm việc
-                                            IconButton(
-                                                onClick = {
-                                                    // Hiển thị dialog xác nhận xóa phiên
-                                                    val confirmDialog = android.app.AlertDialog.Builder(context)
-                                                        .setTitle("Xóa phiên")
-                                                        .setMessage("Bạn có chắc muốn xóa phiên này khỏi lịch sử?")
-                                                        .setPositiveButton("Xóa") { _, _ ->
-                                                            // Xóa phiên làm việc khỏi lịch sử
-                                                            val success = sessionBackup.deleteSessionFromHistory(session.sessionId)
-                                                            if (success) {
-                                                                Toast.makeText(
-                                                                    context,
-                                                                    "Đã xóa phiên khỏi lịch sử",
-                                                                    Toast.LENGTH_SHORT
-                                                                ).show()
-                                                                
-                                                                // Cập nhật lại UI
-                                                                showBackupDialog = false
-                                                            } else {
-                                                                Toast.makeText(
-                                                                    context,
-                                                                    "Không thể xóa phiên",
-                                                                    Toast.LENGTH_SHORT
-                                                                ).show()
-                                                            }
-                                                        }
-                                                        .setNegativeButton("Hủy", null)
-                                                        .create()
-                                                    
-                                                    confirmDialog.show()
-                                                },
-                                                modifier = Modifier.size(24.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Delete,
-                                                    contentDescription = "Xóa phiên",
-                                                    tint = Color.Red,
-                                                    modifier = Modifier.size(16.dp)
-                                                )
-                                            }
-                                        }
-                                    }
+                                    Text(
+                                        text = sessionBackup.getSessionSummary(session),
+                                        fontSize = 10.sp,
+                                        modifier = Modifier.padding(8.dp),
+                                        color = Color(0xFF616161)
+                                    )
                                 }
                             }
                         }
-                    } else {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Text(
-                            text = "Chưa có lịch sử phiên gửi SMS nào",
-                            fontSize = 12.sp,
-                            color = Color.Gray,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
-                        )
                     }
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = { showBackupDialog = false },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
-                ) {
-                    Text("Đóng", color = Color.White)
+                TextButton(onClick = { showBackupDialog = false }) {
+                    Text("Đóng")
                 }
             }
         )
@@ -2087,15 +1517,4 @@ fun showExcelTemplateInfo(context: android.content.Context) {
         "- Cột C-J: Các thông tin khác (tùy chọn)",
         android.widget.Toast.LENGTH_LONG
     ).show()
-}
-
-// Helper function to check if a service is running
-fun isServiceRunning(context: Context, serviceClass: Class<*>): Boolean {
-    val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-    for (service in manager.getRunningServices(Integer.MAX_VALUE)) {
-        if (serviceClass.name == service.service.className) {
-            return true
-        }
-    }
-    return false
 }

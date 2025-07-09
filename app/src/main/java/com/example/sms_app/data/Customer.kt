@@ -2,16 +2,16 @@ package com.example.sms_app.data
 
 data class Customer(
     val id: String,
-    val name: String, // Cột A - Tên khách hàng (xxx)
-    val idNumber: String = "", // Cột B - Số CMND/CCCD (yyy)
-    val phoneNumber: String, // Cột C - Số điện thoại
-    val address: String = "", // Cột D - Địa chỉ (ttt)
-    val option1: String = "", // Cột E - Tùy chọn 1 (zzz)
-    val option2: String = "", // Cột F - Tùy chọn 2 (www)
-    val option3: String = "", // Cột G - Tùy chọn 3 (uuuu)
-    val option4: String = "", // Cột H - Tùy chọn 4 (vvv)
-    val option5: String = "", // Cột I - Tùy chọn 5 (rrr)
-    val templateNumber: Int = 0, // Cột J - Số mẫu tin nhắn (1-9)
+    val name: String, // Cột 1 - Tên khách hàng (xxx)
+    val idNumber: String = "", // Cột 2 - Số CMND/CCCD (yyy)
+    val phoneNumber: String, // Cột 3 - Số điện thoại (thêm số 0 đầu nếu cần)
+    val address: String = "", // Cột 4 - Địa chỉ (ttt)
+    val option1: String = "", // Cột 5 - Tùy chọn 1 (zzz)
+    val option2: String = "", // Cột 6 - Tùy chọn 2 (www)
+    val option3: String = "", // Cột 7 - Tùy chọn 3 (uuu)
+    val option4: String = "", // Cột 8 - Tùy chọn 4 (vvv)
+    val option5: String = "", // Cột 9 - Tùy chọn 5 (rrr)
+    val templateNumber: Int = 0, // Cột 10 - Số mẫu tin nhắn (1-9)
     val carrier: String = detectCarrier(phoneNumber),
     var isSelected: Boolean = false
 ) {
@@ -24,7 +24,7 @@ data class Customer(
             .replace("ttt", address)
             .replace("zzz", option1)
             .replace("www", option2)
-            .replace("uuuu", option3)
+            .replace("uuu", option3)
             .replace("vvv", option4)
             .replace("rrr", option5)
     }

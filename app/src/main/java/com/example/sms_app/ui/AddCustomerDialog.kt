@@ -20,7 +20,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.sms_app.data.Customer
+import com.example.sms_app.utils.SmsUtils
 import java.util.UUID
+import android.util.Log
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun AddCustomerDialog(
@@ -37,6 +41,9 @@ fun AddCustomerDialog(
     var option4 by remember { mutableStateOf("") }
     var option5 by remember { mutableStateOf("") }
     var templateNumber by remember { mutableStateOf("1") }
+    var phoneNumberError by remember { mutableStateOf<String?>(null) }
+    
+    val context = LocalContext.current
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -111,9 +118,14 @@ fun AddCustomerDialog(
                     CustomerField(
                         label = "Cột C - Số điện thoại",
                         value = phoneNumber,
-                        onValueChange = { phoneNumber = it },
+                        onValueChange = { 
+                            phoneNumber = it
+                            phoneNumberError = null
+                        },
                         icon = Icons.Default.Phone,
-                        iconColor = Color.Green
+                        iconColor = Color.Green,
+                        isError = phoneNumberError != null,
+                        errorMessage = phoneNumberError
                     )
                     
                     CustomerField(
@@ -141,7 +153,7 @@ fun AddCustomerDialog(
                     )
                     
                     CustomerField(
-                        label = "Cột G - Tùy chọn 3 (uuuu)",
+                        label = "Cột G - Tùy chọn 3 (uuu)",
                         value = option3,
                         onValueChange = { option3 = it },
                         icon = Icons.Default.Settings,
@@ -179,20 +191,44 @@ fun AddCustomerDialog(
                 Button(
                     onClick = {
                         if (name.isNotEmpty() && phoneNumber.isNotEmpty()) {
-                            val customer = Customer(
-                                id = UUID.randomUUID().toString(),
-                                name = name,
-                                idNumber = idNumber,
-                                phoneNumber = phoneNumber,
-                                address = address,
-                                option1 = option1,
-                                option2 = option2,
-                                option3 = option3,
-                                option4 = option4,
-                                option5 = option5,
-                                templateNumber = templateNumber.toIntOrNull() ?: 1
-                            )
-                            onSave(customer)
+                            // Format and validate phone number
+                            val formattedPhoneNumber = SmsUtils.validateAndFormatPhoneNumber(phoneNumber)
+                            
+                            if (SmsUtils.isValidPhoneNumber(formattedPhoneNumber)) {
+                                val customer = Customer(
+                                    id = UUID.randomUUID().toString(),
+                                    name = name,
+                                    idNumber = idNumber,
+                                    phoneNumber = formattedPhoneNumber,
+                                    address = address,
+                                    option1 = option1,
+                                    option2 = option2,
+                                    option3 = option3,
+                                    option4 = option4,
+                                    option5 = option5,
+                                    templateNumber = templateNumber.toIntOrNull() ?: 1
+                                )
+                                onSave(customer)
+                                
+                                // Log the successful formatting
+                                Log.d("AddCustomerDialog", "Phone number formatted: $phoneNumber → $formattedPhoneNumber")
+                            } else {
+                                // Show error for invalid phone number
+                                phoneNumberError = "Số điện thoại không hợp lệ"
+                                Toast.makeText(
+                                    context,
+                                    "Số điện thoại không hợp lệ! Vui lòng nhập số điện thoại đúng định dạng VN (0xxx)",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        } else {
+                            // Show error for missing fields
+                            if (name.isEmpty()) {
+                                Toast.makeText(context, "Vui lòng nhập tên khách hàng", Toast.LENGTH_SHORT).show()
+                            }
+                            if (phoneNumber.isEmpty()) {
+                                phoneNumberError = "Vui lòng nhập số điện thoại"
+                            }
                         }
                     },
                     modifier = Modifier
@@ -205,7 +241,7 @@ fun AddCustomerDialog(
                     enabled = name.isNotEmpty() && phoneNumber.isNotEmpty()
                 ) {
                     Text(
-                        text = "LƯU THÔNG TIN",
+                        text = "THÊM KHÁCH HÀNG",
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -223,44 +259,33 @@ fun CustomerField(
     onValueChange: (String) -> Unit,
     icon: ImageVector,
     iconColor: Color,
-    isHighlighted: Boolean = false
+    isError: Boolean = false,
+    errorMessage: String? = null
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .let { 
-                if (isHighlighted) 
-                    it.background(Color(0xFFFFEBEE), RoundedCornerShape(4.dp))
-                else it
-            }
-            .padding(if (isHighlighted) 8.dp else 0.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = iconColor,
-            modifier = Modifier.size(24.dp)
-        )
-        
+    Column {
         OutlinedTextField(
             value = value,
             onValueChange = onValueChange,
-            label = { 
-                Text(
-                    text = label,
-                    fontSize = 14.sp,
-                    color = if (isHighlighted) Color.Red else Color.Gray
+            label = { Text(label, fontSize = 14.sp) },
+            modifier = Modifier.fillMaxWidth(),
+            leadingIcon = {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconColor
                 )
             },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = false,
-            maxLines = if (label.contains("Mẫu tin nhắn")) 3 else 1,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = if (isHighlighted) Color.Red else Color.Blue,
-                unfocusedBorderColor = Color.Gray
-            )
+            singleLine = true,
+            isError = isError
         )
+        
+        if (isError && errorMessage != null) {
+            Text(
+                text = errorMessage,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(start = 16.dp, top = 4.dp)
+            )
+        }
     }
 } 

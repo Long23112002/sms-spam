@@ -1,6 +1,7 @@
 package com.example.sms_app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -9,6 +10,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SimCard
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +29,7 @@ import com.example.sms_app.data.MessageTemplate
 import com.example.sms_app.data.SmsRepository
 import com.example.sms_app.utils.SimInfo
 import com.example.sms_app.utils.SimManager
+import kotlinx.coroutines.delay
 
 @Composable
 fun TemplateSelectionDialog(
@@ -41,6 +45,35 @@ fun TemplateSelectionDialog(
     var selectedSim by remember { mutableStateOf(smsRepository.getSelectedSim()) }
     val selectedCustomers = customers.filter { it.isSelected }
     val availableSims = remember { SimManager.getAvailableSims(context) }
+
+    var refreshTrigger by remember { mutableStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        val selectedSim = smsRepository.getSelectedSim()
+        smsRepository.getSmsCountToday(selectedSim)
+        
+
+        availableSims.forEach { sim ->
+            smsRepository.getSmsCountToday(sim.subscriptionId)
+        }
+        
+
+        refreshTrigger++
+
+        while (true) {
+            delay(3000)
+
+            val currentSim = smsRepository.getSelectedSim()
+            smsRepository.getSmsCountToday(currentSim)
+
+            availableSims.forEach { sim ->
+                smsRepository.getSmsCountToday(sim.subscriptionId)
+            }
+
+            refreshTrigger++
+            android.util.Log.d("TemplateSelectionDialog", "🔄 Auto-refreshed SMS counts, trigger: $refreshTrigger")
+        }
+    }
     
     Dialog(
         onDismissRequest = onDismiss,
@@ -94,6 +127,46 @@ fun TemplateSelectionDialog(
                     fontWeight = FontWeight.Bold
                 )
                 
+                // Add a prominent refresh button
+                Button(
+                    onClick = {
+                        // Force refresh all SMS counts
+                        val currentSim = smsRepository.getSelectedSim()
+                        val count = smsRepository.forceRefreshSmsCount(currentSim)
+                        
+                        // Also refresh counts for all available SIMs
+                        availableSims.forEach { sim ->
+                            smsRepository.forceRefreshSmsCount(sim.subscriptionId)
+                        }
+                        
+                        // Update trigger to force recomposition
+                        refreshTrigger++
+                        
+                        // Show confirmation toast
+                        android.widget.Toast.makeText(
+                            context,
+                            "Đã cập nhật số lượng SMS: SIM ${currentSim} - $count/40",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF2196F3)
+                    )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh counts",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "CẬP NHẬT SỐ LƯỢNG SMS",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                
                 // SIM Selection
                 if (availableSims.size > 1) {
                     Text(
@@ -104,34 +177,147 @@ fun TemplateSelectionDialog(
                     
                     Column {
                         availableSims.forEach { sim ->
-                            Row(
+                            val carrierColor = when(sim.carrierName) {
+                                "Viettel" -> Color(0xFF4CAF50)
+                                "Mobifone" -> Color(0xFF2196F3)
+                                "Vinaphone" -> Color(0xFFF44336)
+                                "Vietnamobile" -> Color(0xFF607D8B)
+                                else -> Color(0xFF9C27B0)
+                            }
+                            
+                            Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = selectedSim == sim.subscriptionId,
-                                    onClick = { 
+                                    .padding(vertical = 4.dp)
+                                    .clickable {
                                         selectedSim = sim.subscriptionId
                                         smsRepository.setSelectedSim(sim.subscriptionId)
                                     },
-                                    colors = RadioButtonDefaults.colors(selectedColor = Color.Blue)
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (selectedSim == sim.subscriptionId) 
+                                        Color(0xFFE3F2FD) else Color.White
+                                ),
+                                elevation = CardDefaults.cardElevation(
+                                    defaultElevation = if (selectedSim == sim.subscriptionId) 2.dp else 1.dp
                                 )
-                                
-                                Column(
-                                    modifier = Modifier.padding(start = 8.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(
-                                        text = sim.displayName,
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    Text(
-                                        text = "${sim.carrierName} • ${smsRepository.getSmsCountToday(sim.subscriptionId)}/40 tin đã gửi",
-                                        fontSize = 12.sp,
-                                        color = Color.Gray
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        RadioButton(
+                                            selected = selectedSim == sim.subscriptionId,
+                                            onClick = { 
+                                                selectedSim = sim.subscriptionId
+                                                smsRepository.setSelectedSim(sim.subscriptionId)
+                                            },
+                                            colors = RadioButtonDefaults.colors(selectedColor = carrierColor)
+                                        )
+                                        
+                                        Column(
+                                            modifier = Modifier.padding(start = 8.dp)
+                                        ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "SIM ${sim.simSlotIndex + 1}",
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Card(
+                                                colors = CardDefaults.cardColors(
+                                                    containerColor = carrierColor
+                                                ),
+                                                modifier = Modifier.padding(horizontal = 4.dp),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = sim.carrierName,
+                                                    fontSize = 10.sp,
+                                                    color = Color.White,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                        
+                                        // Remove SMS count display
+                                        /*
+                                        // Force refresh SMS count for accurate display
+                                        val smsCount = remember(sim.subscriptionId, refreshTrigger) { 
+                                            smsRepository.forceRefreshSmsCount(sim.subscriptionId) 
+                                        }
+                                        
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Đã gửi: ",
+                                                fontSize = 12.sp,
+                                                color = Color.Gray
+                                            )
+                                            Text(
+                                                text = "$smsCount/40",
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = when {
+                                                    smsCount > 35 -> Color.Red
+                                                    smsCount > 25 -> Color(0xFFFF9800) // Orange
+                                                    else -> Color(0xFF4CAF50) // Green
+                                                }
+                                            )
+                                            Text(
+                                                text = " tin hôm nay",
+                                                fontSize = 12.sp,
+                                                color = Color.Gray
+                                            )
+                                            
+                                            // Add refresh button
+                                            IconButton(
+                                                onClick = {
+                                                    // Force refresh SMS count
+                                                    val count = smsRepository.forceRefreshSmsCount(sim.subscriptionId)
+                                                    // Update trigger to force recomposition
+                                                    refreshTrigger++
+                                                    
+                                                    // Show toast with updated count
+                                                    android.widget.Toast.makeText(
+                                                        context,
+                                                        "Đã cập nhật: $count/40 tin",
+                                                        android.widget.Toast.LENGTH_SHORT
+                                                    ).show()
+                                                },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Refresh,
+                                                    contentDescription = "Refresh count",
+                                                    tint = Color(0xFF2196F3),
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                        }
+                                        */
+                                        
+                                        if (sim.phoneNumber?.isNotEmpty() == true) {
+                                            Text(
+                                                text = "SĐT: ${sim.phoneNumber}",
+                                                fontSize = 11.sp,
+                                                color = Color.Gray
+                                            )
+                                        }
+                                    }
+                                    }
+                                    
+                                                                // Reset button removed
                                 }
                             }
                         }
@@ -139,37 +325,78 @@ fun TemplateSelectionDialog(
                 } else if (availableSims.isNotEmpty()) {
                     // Single SIM info
                     val sim = availableSims.first()
+                    val carrierColor = when(sim.carrierName) {
+                        "Viettel" -> Color(0xFF4CAF50)
+                        "Mobifone" -> Color(0xFF2196F3)
+                        "Vinaphone" -> Color(0xFFF44336)
+                        "Vietnamobile" -> Color(0xFF607D8B)
+                        else -> Color(0xFF9C27B0)
+                    }
+                    
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFFF0F8FF))
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(
-                                text = "📱",
-                                fontSize = 16.sp
-                            )
-                            Column(
-                                modifier = Modifier.padding(start = 8.dp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
                             ) {
-                                Text(
-                                    text = sim.displayName,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.Bold
+                                Icon(
+                                    imageVector = Icons.Default.SimCard,
+                                    contentDescription = null,
+                                    tint = carrierColor,
+                                    modifier = Modifier.size(24.dp)
                                 )
-                                Text(
-                                    text = "${sim.carrierName} • ${smsRepository.getSmsCountToday(sim.subscriptionId)}/40 tin đã gửi",
-                                    fontSize = 12.sp,
-                                    color = Color.Gray
-                                )
+                                
+                                Column(
+                                    modifier = Modifier.padding(start = 12.dp)
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "SIM ${sim.simSlotIndex + 1}",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Card(
+                                            colors = CardDefaults.cardColors(
+                                                containerColor = carrierColor
+                                            ),
+                                            modifier = Modifier.padding(horizontal = 4.dp),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = sim.carrierName,
+                                                fontSize = 10.sp,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    if (sim.phoneNumber?.isNotEmpty() == true) {
+                                        Text(
+                                            text = "SĐT: ${sim.phoneNumber}",
+                                            fontSize = 11.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
                             }
+
                         }
                     }
                 }
-                
-                // Template selection
+
                 Text(
                     text = "Chọn mẫu tin nhắn:",
                     fontSize = 14.sp,
@@ -191,33 +418,7 @@ fun TemplateSelectionDialog(
                     }
                 }
                 
-//                // Preview with first customer (using default template)
-//                if (selectedCustomers.isNotEmpty()) {
-//                    val previewTemplate = templates.find { it.id == defaultTemplateId }
-//                    if (previewTemplate != null && previewTemplate.content.isNotEmpty()) {
-//                        Card(
-//                            modifier = Modifier.fillMaxWidth(),
-//                            colors = CardDefaults.cardColors(containerColor = Color(0xFFE8F5E8))
-//                        ) {
-//                            Column(
-//                                modifier = Modifier.padding(12.dp)
-//                            ) {
-//                                Text(
-//                                    text = "Tin nhắn sẽ được gửi (${selectedCustomers.first().name}) - Mẫu mặc định $defaultTemplateId:",
-//                                    fontWeight = FontWeight.Bold,
-//                                    fontSize = 12.sp,
-//                                    color = Color(0xFF2E7D32)
-//                                )
-//                                Spacer(modifier = Modifier.height(4.dp))
-//                                Text(
-//                                    text = selectedCustomers.first().getPersonalizedMessage(templates, defaultTemplateId),
-//                                    fontSize = 12.sp,
-//                                    color = Color(0xFF2E7D32)
-//                                )
-//                            }
-//                        }
-//                    }
-//                }
+
                 
                 // Action buttons
                 Row(

@@ -192,22 +192,47 @@ object SmsUtils {
         sentIntent: PendingIntent? = null
     ): Boolean {
         return try {
+            // Final cleanup of phone number to ensure no invisible characters remain
+            val cleanedNumber = phoneNumber.toCharArray().filter { it in '0'..'9' || it == '+' }.joinToString("")
+            Log.d(TAG, "Final phone number cleanup for sending: '$phoneNumber' → '$cleanedNumber'")
+            
             // Lấy instance của SmsManager
             val smsManager = getDefaultMethod?.invoke(null)
             
-            // Gửi SMS
-            sendTextMessageMethod?.invoke(
-                smsManager,
-                phoneNumber,
-                null,
-                message,
-                sentIntent,
-                null
-            )
-            
-            true
+            try {
+                // Gửi SMS
+                sendTextMessageMethod?.invoke(
+                    smsManager,
+                    cleanedNumber,
+                    null,
+                    message,
+                    sentIntent,
+                    null
+                )
+                
+                true
+            } catch (e: Exception) {
+                val stackTrace = e.stackTraceToString()
+                Log.e(TAG, "SMS sending failed for $cleanedNumber", e)
+                Log.e(TAG, "Detailed stack trace: $stackTrace")
+                
+                // Try to get more details about the failure
+                val cause = e.cause
+                if (cause != null) {
+                    Log.e(TAG, "Root cause: ${cause.message}", cause)
+                }
+                
+                val invocationException = e as? java.lang.reflect.InvocationTargetException
+                if (invocationException != null) {
+                    val targetException = invocationException.targetException
+                    Log.e(TAG, "Target exception: ${targetException?.message}", targetException)
+                }
+                
+                false
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send SMS using reflection", e)
+            Log.e(TAG, "Detailed stack trace: ${e.stackTraceToString()}")
             false
         }
     }
@@ -334,26 +359,8 @@ object SmsUtils {
      * Tạo độ trễ ngẫu nhiên giữa các tin nhắn
      */
     fun getRandomDelay(baseDelay: Int): Long {
-        // Tạo độ trễ ngẫu nhiên từ 80% đến 120% của baseDelay
-        val minDelay = (baseDelay * 0.8).toInt()
-        val maxDelay = (baseDelay * 1.2).toInt()
-        return Random.nextInt(minDelay, maxDelay + 1).toLong() * 1000
-    }
-    
-    /**
-     * Tạo độ trễ ngẫu nhiên giữa các phần của tin nhắn đa phần
-     */
-    fun getRandomPartDelay(): Long {
-        // Tạo độ trễ ngẫu nhiên từ 300ms đến 800ms
-        return Random.nextLong(300, 801)
-    }
-    
-    /**
-     * Tạo độ trễ ngẫu nhiên trước khi gửi tin nhắn
-     */
-    fun getRandomPreSendDelay(): Long {
-        // Tạo độ trễ ngẫu nhiên từ 500ms đến 1500ms
-        return Random.nextLong(500, 1501)
+        // Không còn tạo độ trễ ngẫu nhiên, sử dụng giá trị chính xác
+        return baseDelay.toLong() * 1000
     }
     
     fun hasRequiredPermissions(context: Context): Boolean {
@@ -372,12 +379,267 @@ object SmsUtils {
         }
     }
     
-    fun isValidPhoneNumber(phoneNumber: String): Boolean {
-        return phoneNumber.isNotEmpty() && 
-               phoneNumber.matches(Regex("^[+]?[0-9]{10,13}$"))
+    /**
+     * Checks if a phone number is a valid Vietnamese mobile number
+     */
+    fun isValidVietnameseNumber(phoneNumber: String): Boolean {
+        val cleanedNumber = validateAndFormatPhoneNumber(phoneNumber)
+        
+        // Must be 10 digits and start with 0
+        if (cleanedNumber.length != 10 || !cleanedNumber.startsWith("0")) {
+            return false
+        }
+        
+        // Check against valid Vietnamese carrier prefixes
+        val prefix = cleanedNumber.substring(0, 3)
+        val validPrefixes = listOf(
+            // Viettel
+            "032", "033", "034", "035", "036", "037", "038", "039",
+            "086", "096", "097", "098",
+            // Mobifone
+            "070", "076", "077", "078", "079",
+            "089", "090", "093",
+            // Vinaphone
+            "081", "082", "083", "084", "085",
+            "088", "091", "094",
+            // Vietnamobile
+            "056", "058", "092",
+            // ITelecom
+            "099",
+            // Reddi/Gmobile
+            "059"
+        )
+        
+        return validPrefixes.contains(prefix)
     }
     
+    /**
+     * Validates and formats a phone number to ensure proper SMS delivery
+     * This is a comprehensive function that should be used whenever processing phone numbers
+     */
+    fun validateAndFormatPhoneNumber(phoneNumber: String): String {
+        val originalNumber = phoneNumber.trim()
+        Log.d(TAG, "Validating phone number: '$originalNumber'")
+        
+        try {
+            // Apply deep Unicode normalization first to eliminate invisible characters
+            var normalized = java.text.Normalizer.normalize(originalNumber, java.text.Normalizer.Form.NFKC)
+            
+            // Log hex values of characters to detect invisible characters
+            val hexValues = normalized.map { "\\u" + it.code.toString(16).padStart(4, '0') }.joinToString("")
+            Log.d(TAG, "Unicode hex values: $hexValues")
+            
+            // Remove ALL non-digit characters including invisible ones
+            var digitsOnly = normalized.replace(Regex("[^0-9+]"), "")
+            
+            // Handle empty string
+            if (digitsOnly.isEmpty()) {
+                Log.e(TAG, "Error: Empty phone number after formatting")
+                return ""
+            }
+            
+            // Remove international prefix if exists
+            if (digitsOnly.startsWith("+84")) {
+                digitsOnly = "0" + digitsOnly.substring(3)
+                Log.d(TAG, "Converted from international format +84: $digitsOnly")
+            } else if (digitsOnly.startsWith("84") && digitsOnly.length >= 10) {
+                digitsOnly = "0" + digitsOnly.substring(2)
+                Log.d(TAG, "Converted from international format 84: $digitsOnly")
+            }
+            
+            // If doesn't start with 0 but has 9 digits, add leading 0 (Vietnamese numbers)
+            if (!digitsOnly.startsWith("0") && digitsOnly.length == 9) {
+                digitsOnly = "0$digitsOnly"
+                Log.d(TAG, "Added leading zero: $digitsOnly")
+            }
+            
+            // Xử lý các đầu số cũ không còn hợp lệ của Việt Nam
+            if (digitsOnly.startsWith("0") && digitsOnly.length == 10) {
+                // Các đầu số cũ cần được chuyển đổi
+                val oldPrefixMap = mapOf(
+                    "0123" to "083", "0124" to "084", "0125" to "085",
+                    "0127" to "081", "0129" to "082", // Vinaphone
+                    
+                    "0120" to "070", "0121" to "079", "0122" to "077",
+                    "0126" to "076", "0128" to "078", // Mobifone
+                    
+                    "0162" to "032", "0163" to "033", "0164" to "034",
+                    "0165" to "035", "0166" to "036", "0167" to "037",
+                    "0168" to "038", "0169" to "039", // Viettel
+                    
+                    "0188" to "058", "0186" to "056", // Vietnamobile
+                    
+                    "0199" to "059" // Gmobile
+                )
+                
+                // Kiểm tra và chuyển đổi đầu số cũ
+                for ((oldPrefix, newPrefix) in oldPrefixMap) {
+                    if (digitsOnly.startsWith(oldPrefix)) {
+                        val newNumber = newPrefix + digitsOnly.substring(4)
+                        Log.d(TAG, "Converted old prefix $oldPrefix to $newPrefix: $digitsOnly → $newNumber")
+                        digitsOnly = newNumber
+                        break
+                    }
+                }
+                
+                // Đặc biệt xử lý đầu số 013x không còn hợp lệ
+                if (digitsOnly.startsWith("013")) {
+                    val newNumber = "083" + digitsOnly.substring(3)
+                    Log.d(TAG, "Fixed problematic prefix 013: $digitsOnly → $newNumber")
+                    digitsOnly = newNumber
+                }
+                
+                // Special handling for problematic prefixes that cause "Generic failure"
+                if (digitsOnly.startsWith("0946") || digitsOnly.startsWith("0167")) {
+                    Log.d(TAG, "Applied special handling for problematic prefix: $digitsOnly")
+                }
+            }
+            
+            // Ensure phone number is valid (Vietnamese numbers are typically 10 digits)
+            if (digitsOnly.length < 10 || digitsOnly.length > 11) {
+                Log.w(TAG, "Warning: Unusual phone number length: ${digitsOnly.length} digits")
+            }
+            
+            // Final validation - must start with 0 for domestic format
+            if (!digitsOnly.startsWith("0")) {
+                Log.w(TAG, "Warning: Phone number doesn't start with 0: $digitsOnly")
+            }
+            
+            Log.d(TAG, "Formatted phone number: '$originalNumber' → '$digitsOnly'")
+            return digitsOnly
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Error formatting phone number: ${e.message}", e)
+            return originalNumber
+        }
+    }
+    
+    fun isValidPhoneNumber(phoneNumber: String): Boolean {
+        val formatted = validateAndFormatPhoneNumber(phoneNumber)
+        
+        // Kiểm tra xem có phải là số điện thoại Việt Nam hợp lệ không
+        if (formatted.startsWith("0") && formatted.length == 10) {
+            // Kiểm tra xem đầu số có hợp lệ không
+            val isValidPrefix = hasValidVietnamesePrefix(formatted)
+            if (!isValidPrefix) {
+                Log.w(TAG, "Warning: Vietnamese phone number with invalid prefix: $formatted")
+            }
+        }
+        
+        return formatted.isNotEmpty() && 
+               formatted.startsWith("0") && 
+               formatted.length >= 10 && 
+               formatted.length <= 11
+    }
+    
+    /**
+     * Kiểm tra xem số điện thoại Việt Nam có đầu số hợp lệ hay không
+     */
+    fun hasValidVietnamesePrefix(phoneNumber: String): Boolean {
+        if (!phoneNumber.startsWith("0") || phoneNumber.length < 3) {
+            return false
+        }
+        
+        val prefix = phoneNumber.substring(0, 3)
+        val validPrefixes = listOf(
+            // Viettel
+            "032", "033", "034", "035", "036", "037", "038", "039",
+            "086", "096", "097", "098",
+            // Mobifone
+            "070", "076", "077", "078", "079",
+            "089", "090", "093",
+            // Vinaphone
+            "081", "082", "083", "084", "085",
+            "088", "091", "094",
+            // Vietnamobile
+            "056", "058", "092",
+            // ITelecom
+            "099",
+            // Reddi/Gmobile
+            "059"
+        )
+        
+        return validPrefixes.contains(prefix)
+    }
+    
+    // Replace the old simple formatPhoneNumber with the more comprehensive one
     fun formatPhoneNumber(phoneNumber: String): String {
-        return phoneNumber.replace("\\s+".toRegex(), "")
+        // Kiểm tra và sửa đầu số không hợp lệ
+        var formatted = validateAndFormatPhoneNumber(phoneNumber)
+        
+        // Đặc biệt xử lý đầu số 013 - không còn hợp lệ nữa, chuyển sang 083
+        if (formatted.startsWith("013") && formatted.length == 10) {
+            val corrected = "083" + formatted.substring(3)
+            Log.d(TAG, "Corrected invalid prefix 013 to 083: $formatted -> $corrected")
+            formatted = corrected
+        }
+        
+        return formatted
+    }
+
+    /**
+     * Special SMS sending method optimized for Vietnamese carriers
+     * This method tries different phone number formats to avoid "Generic failure" errors
+     */
+    fun sendSmsToVietnameseNumber(
+        phoneNumber: String, 
+        message: String,
+        sentIntent: PendingIntent? = null
+    ): Boolean {
+        Log.d(TAG, "Using Vietnamese-optimized SMS sender for: $phoneNumber")
+        
+        // First clean the number
+        val cleanedNumber = validateAndFormatPhoneNumber(phoneNumber)
+        
+        // Try different formats in order of likelihood to succeed
+        val formatsToTry = mutableListOf<String>()
+        
+        // Format 1: Standard domestic format (most common)
+        formatsToTry.add(cleanedNumber)
+        
+        // Format 2: International format with +84
+        if (cleanedNumber.startsWith("0")) {
+            formatsToTry.add("+84${cleanedNumber.substring(1)}")
+        }
+        
+        // Format 3: International format without +
+        if (cleanedNumber.startsWith("0")) {
+            formatsToTry.add("84${cleanedNumber.substring(1)}")
+        }
+        
+        // Log all formats we'll try
+        Log.d(TAG, "Will try these formats: $formatsToTry")
+        
+        // Try each format until one succeeds
+        for ((index, format) in formatsToTry.withIndex()) {
+            try {
+                Log.d(TAG, "Attempt ${index+1}/${formatsToTry.size}: Sending SMS to format: $format")
+                
+                // Get SmsManager instance
+                val smsManager = getDefaultMethod?.invoke(null)
+                
+                // Send the SMS
+                sendTextMessageMethod?.invoke(
+                    smsManager,
+                    format,
+                    null,
+                    message,
+                    sentIntent,
+                    null
+                )
+                
+                // If we get here, the SMS was sent successfully
+                Log.d(TAG, "✅ Successfully sent SMS using format: $format")
+                return true
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Failed to send SMS using format: $format", e)
+                // Continue to next format
+            }
+        }
+        
+        // If we get here, all formats failed
+        Log.e(TAG, "❌ All formats failed for number: $phoneNumber")
+        return false
     }
 } 

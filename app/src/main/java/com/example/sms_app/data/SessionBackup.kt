@@ -71,8 +71,9 @@ class SessionBackup(private val context: Context) {
     
     /**
      * Lưu phiên làm việc hiện tại với ID và danh sách khách hàng
+     * @return true nếu lưu thành công, false nếu có lỗi
      */
-    fun saveActiveSession(templateId: Int, customers: List<Customer>, sessionName: String = "") {
+    fun saveActiveSession(templateId: Int, customers: List<Customer>, sessionName: String = ""): Boolean {
         try {
             val sessionId = generateSessionId()
             val actualSessionName = if (sessionName.isEmpty()) generateDefaultSessionName() else sessionName
@@ -98,13 +99,20 @@ class SessionBackup(private val context: Context) {
                 completedCustomers = mutableListOf()
             )
             
-            // Đảm bảo lưu ngay lập tức
+            // Đảm bảo lưu ngay lập tức và trả về kết quả
             val sessionJson = gson.toJson(session)
-            sharedPreferences.edit().putString(ACTIVE_SESSION_KEY, sessionJson).commit() // Dùng commit thay vì apply để đảm bảo lưu ngay lập tức
+            val result = sharedPreferences.edit().putString(ACTIVE_SESSION_KEY, sessionJson).commit() // Dùng commit thay vì apply để đảm bảo lưu ngay lập tức
             
-            Log.d(TAG, "Đã lưu session backup thành công: ID=${session.sessionId}, Tên=${session.sessionName}, Số KH=${session.totalCustomers}")
+            if (result) {
+                Log.d(TAG, "Đã lưu session backup thành công: ID=${session.sessionId}, Tên=${session.sessionName}, Số KH=${session.totalCustomers}")
+            } else {
+                Log.e(TAG, "Không thể lưu session backup")
+            }
+            
+            return result
         } catch (e: Exception) {
             Log.e(TAG, "Error creating and saving active session", e)
+            return false
         }
     }
     
@@ -125,6 +133,7 @@ class SessionBackup(private val context: Context) {
     
     /**
      * Đánh dấu một khách hàng đã được xử lý thành công
+     * Khách hàng vẫn được giữ trong danh sách để có thể khôi phục sau này
      */
     fun markCustomerProcessed(customerId: String) {
         try {
@@ -134,16 +143,18 @@ class SessionBackup(private val context: Context) {
             if (customer != null) {
                 // Thêm vào danh sách đã hoàn thành
                 session.completedCustomers.add(customer)
+                
+                // QUAN TRỌNG: KHÔNG loại bỏ khách hàng khỏi danh sách còn lại
+                // Để đảm bảo khách hàng vẫn được lưu trong backup
+                // Chỉ cập nhật số lượng đã gửi
+                session.sentCount = session.completedCustomers.size
+                session.lastUpdateTime = System.currentTimeMillis()
+                saveActiveSession(session)
+                
+                Log.d(TAG, "Marked customer $customerId as processed. Kept in backup for future reference.")
+            } else {
+                Log.d(TAG, "Customer $customerId not found in remaining customers list")
             }
-            
-            // Loại bỏ khỏi danh sách còn lại
-            val remainingCustomers = session.remainingCustomers.filter { it.id != customerId }
-            session.remainingCustomers = remainingCustomers
-            session.sentCount = session.completedCustomers.size
-            session.lastUpdateTime = System.currentTimeMillis()
-            saveActiveSession(session)
-            
-            Log.d(TAG, "Marked customer $customerId as processed. Remaining: ${remainingCustomers.size}")
         } catch (e: Exception) {
             Log.e(TAG, "Error marking customer as processed", e)
         }
@@ -275,7 +286,11 @@ class SessionBackup(private val context: Context) {
     fun getSessionSummary(session: SmsSession): String {
         val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
         val startDate = dateFormat.format(Date(session.startTime))
-        val progress = "${session.sentCount}/${session.totalCustomers}"
+        
+        // Tính tổng số khách hàng (đã gửi + còn lại)
+        val totalCustomers = session.completedCustomers.size + session.remainingCustomers.size
+        val progress = "${session.sentCount}/$totalCustomers"
+        
         val statusText = when (session.status) {
             "Hoàn thành" -> "✅ Hoàn thành"
             "Thất bại" -> "❌ Thất bại"
@@ -294,6 +309,7 @@ class SessionBackup(private val context: Context) {
     
     /**
      * Khôi phục danh sách khách hàng từ một phiên làm việc cụ thể
+     * Bao gồm cả khách hàng đã được xử lý và chưa xử lý
      */
     fun restoreCustomersFromSession(sessionId: String): List<Customer> {
         try {
@@ -307,24 +323,34 @@ class SessionBackup(private val context: Context) {
                 return emptyList()
             }
             
-            Log.d(TAG, "Đã tìm thấy session: ${session.sessionName}, số KH còn lại: ${session.remainingCustomers.size}")
+            // Tạo danh sách đầy đủ bao gồm cả khách hàng đã xử lý và chưa xử lý
+            val allCustomers = mutableListOf<Customer>()
             
-            // Nếu phiên thất bại, trả về danh sách khách hàng còn lại + khách hàng thất bại
+            // Thêm khách hàng còn lại (chưa xử lý)
+            allCustomers.addAll(session.remainingCustomers)
+            
+            // Thêm khách hàng đã hoàn thành (đã xử lý)
+            allCustomers.addAll(session.completedCustomers)
+            
+            // Đảm bảo không có khách hàng trùng lặp
+            val uniqueCustomers = allCustomers.distinctBy { it.id }
+            
+            Log.d(TAG, "Đã tìm thấy session: ${session.sessionName}")
+            Log.d(TAG, "Tổng số khách hàng: ${uniqueCustomers.size} (Đã xử lý: ${session.completedCustomers.size}, Chưa xử lý: ${session.remainingCustomers.size})")
+            
+            // Nếu phiên thất bại, đảm bảo khách hàng thất bại được đưa vào danh sách
             if (session.status == "Thất bại" && session.failedCustomerId.isNotEmpty()) {
-                val failedCustomer = session.remainingCustomers.find { it.id == session.failedCustomerId }
+                val failedCustomer = uniqueCustomers.find { it.id == session.failedCustomerId }
                 
-                if (failedCustomer != null) {
-                    Log.d(TAG, "Phiên thất bại, khôi phục ${session.remainingCustomers.size + 1} khách hàng (bao gồm khách hàng thất bại: ${failedCustomer.name})")
-                    return session.remainingCustomers + listOf(failedCustomer)
-                } else {
+                if (failedCustomer == null) {
                     Log.d(TAG, "Phiên thất bại nhưng không tìm thấy khách hàng thất bại ID: ${session.failedCustomerId}")
-                    return session.remainingCustomers
+                } else {
+                    Log.d(TAG, "Phiên thất bại, đã bao gồm khách hàng thất bại: ${failedCustomer.name}")
                 }
-            } else {
-                // Nếu phiên không thất bại, trả về danh sách khách hàng còn lại
-                Log.d(TAG, "Khôi phục ${session.remainingCustomers.size} khách hàng từ phiên ${session.status}")
-                return session.remainingCustomers
             }
+            
+            Log.d(TAG, "Khôi phục ${uniqueCustomers.size} khách hàng từ phiên ${session.status}")
+            return uniqueCustomers
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi khi khôi phục khách hàng từ session: ${e.message}", e)
             return emptyList()
@@ -356,6 +382,21 @@ class SessionBackup(private val context: Context) {
             return false
         } catch (e: Exception) {
             Log.e(TAG, "Error deleting session from history", e)
+            return false
+        }
+    }
+    
+    /**
+     * Xóa tất cả lịch sử phiên làm việc
+     */
+    fun clearAllSessionHistory(): Boolean {
+        try {
+            // Xóa toàn bộ lịch sử
+            sharedPreferences.edit().remove(SESSION_HISTORY_KEY).apply()
+            Log.d(TAG, "Cleared all session history")
+            return true
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing all session history", e)
             return false
         }
     }
