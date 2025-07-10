@@ -1,13 +1,12 @@
-package com.example.sms_app
+package com.example.sms_app.presentation
 
 import android.app.Application
 import android.util.Log
-import androidx.work.Configuration
+import dagger.hilt.android.HiltAndroidApp
 import timber.log.Timber
 import java.io.File
-import java.io.FileOutputStream
-import java.security.MessageDigest
 
+@HiltAndroidApp
 class SmsApplication : Application() {
     
     override fun onCreate() {

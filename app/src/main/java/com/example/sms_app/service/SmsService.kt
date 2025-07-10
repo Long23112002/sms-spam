@@ -16,20 +16,17 @@ import android.os.IBinder
 import android.telephony.SmsManager
 import android.telephony.TelephonyManager
 import android.util.Log
-import androidx.annotation.RequiresApi
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import com.example.sms_app.R
 import com.example.sms_app.data.Customer
 import com.example.sms_app.data.SmsRepository
-import com.example.sms_app.data.AppSettings
 import com.example.sms_app.data.SessionBackup
 import com.example.sms_app.data.SmsSession
 import kotlinx.coroutines.*
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlin.random.Random
-import com.example.sms_app.MainActivity
+import com.example.sms_app.presentation.activity.MainActivity
 import com.example.sms_app.data.SmsTemplate
 import com.example.sms_app.utils.SmsUtils
 import android.os.Handler
@@ -38,7 +35,9 @@ import android.app.Activity
 import android.provider.Settings
 import android.telephony.SubscriptionManager
 import androidx.annotation.RequiresPermission
+import dagger.hilt.android.AndroidEntryPoint
 
+@AndroidEntryPoint
 class SmsService : Service() {
     private var serviceJob: Job? = null
     private lateinit var smsRepository: SmsRepository
