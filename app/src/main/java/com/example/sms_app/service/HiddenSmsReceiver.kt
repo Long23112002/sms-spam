@@ -7,7 +7,7 @@ import android.os.Build
 import android.telephony.TelephonyManager
 import android.util.Log
 import com.example.sms_app.data.SmsRepository
-import com.example.sms_app.utils.SmsUtils
+import com.example.sms_app.utils.*
 import dagger.hilt.android.AndroidEntryPoint
 import kotlin.random.Random
 
@@ -31,7 +31,7 @@ class HiddenSmsReceiver : BroadcastReceiver() {
             }*/
             
             // Kiểm tra quyền gửi SMS
-            if (!SmsUtils.hasRequiredPermissions(context)) {
+            if (!hasRequiredPermissions(context)) {
                 Log.d(TAG, "Không có đủ quyền để gửi SMS")
                 return
             }

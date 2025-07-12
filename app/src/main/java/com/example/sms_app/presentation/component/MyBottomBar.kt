@@ -1,5 +1,6 @@
 package com.example.sms_app.presentation.component
 
+import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -16,22 +17,32 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.capitalize
 import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.sms_app.MainActivity.SmsProgress
+import com.example.sms_app.data.MessageTemplate
+import com.example.sms_app.presentation.viewmodel.SendMessageViewModel
+import com.example.sms_app.utils.SimInfo
 
 
 enum class BottomButton(val icon: ImageVector) {
@@ -51,12 +62,49 @@ enum class BottomButton(val icon: ImageVector) {
 }
 
 @Composable
-fun MyBottomBar(providers: List<String>, onBottomButton: ((BottomButton) -> Unit)) {
+fun MyBottomBar(
+    providers: List<String>,
+    sendMessageViewModel: SendMessageViewModel = hiltViewModel(),
+    onBottomButton: ((BottomButton) -> Unit)
+) {
     var button by remember {
         mutableStateOf(BottomButton.None)
     }
-    BottomAppBar(Modifier.height(170.dp)) {
+    var messageTemplate by remember {
+        mutableStateOf(MessageTemplate())
+    }
+    var simInfo by remember {
+        mutableStateOf(SimInfo())
+    }
+    val progress = sendMessageViewModel.progress.observeAsState(SmsProgress()).value
+    val completion = sendMessageViewModel.completion.observeAsState().value
+    val isSending = sendMessageViewModel.isSending.observeAsState().value
+    val context = LocalContext.current
+
+    LaunchedEffect(completion) {
+        completion?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    BottomAppBar(Modifier.height(210.dp)) {
         Column {
+            if (isSending == true) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    progress.let {
+                        Text("${it.progress}/${it.total}")
+                        TextButton(onClick = {
+                            button = BottomButton.SendMessage
+                        }) {
+                            Text("Open dialog")
+                        }
+                    }
+                }
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 listOf(
                     listOf(BottomButton.Setting, BottomButton.BackUp),
@@ -76,7 +124,6 @@ fun MyBottomBar(providers: List<String>, onBottomButton: ((BottomButton) -> Unit
                                 }
                             }
                         }
-
                     }
                 }
             }
@@ -142,7 +189,9 @@ fun MyBottomBar(providers: List<String>, onBottomButton: ((BottomButton) -> Unit
         BottomButton.Send -> {
             SelectSimDialog(onDismissRequest = {
                 button = BottomButton.None
-            }, onSend = {
+            }, onSend = { t, s ->
+                messageTemplate = t
+                simInfo = s
                 button = BottomButton.SendMessage
             })
         }
@@ -169,7 +218,11 @@ fun MyBottomBar(providers: List<String>, onBottomButton: ((BottomButton) -> Unit
         BottomButton.MoreVert -> {}
         BottomButton.None -> {}
         BottomButton.SendMessage -> {
-            SendMessageDialog {
+            SendMessageDialog(
+                messageTemplate,
+                simInfo,
+                sendMessageViewModel
+            ) {
                 button = BottomButton.None
             }
         }

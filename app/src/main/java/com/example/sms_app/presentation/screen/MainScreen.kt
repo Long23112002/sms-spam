@@ -1,5 +1,8 @@
 package com.example.sms_app.presentation.screen
 
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,19 +20,23 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.sms_app.data.Customer
 import com.example.sms_app.presentation.component.MyBottomBar
 import com.example.sms_app.presentation.component.MyTopBar
 import com.example.sms_app.presentation.viewmodel.MainViewModel
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 @Composable
 fun MainScreen(mainViewModel: MainViewModel = hiltViewModel()) {
@@ -37,24 +44,42 @@ fun MainScreen(mainViewModel: MainViewModel = hiltViewModel()) {
     var selectAll by remember {
         mutableStateOf(false)
     }
-    val customers = buildList {
-        for (i in 0..99) {
-            add(
-                Customer(
-                    id = "",
-                    name = "Hxt",
-                    phoneNumber = "03462222222",
-                )
-            )
+    val customers = mainViewModel.customers.observeAsState(listOf()).value
+    val context = LocalContext.current
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            mainViewModel.handleExcelFile(it) { msg ->
+                CoroutineScope(Dispatchers.Main).launch {
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                }
+            }
         }
     }
 
-//    val customers: List<Customer> = listOf()
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
-            MyTopBar {
+            MyTopBar(
+                onSync = {
+                mainViewModel.sync()
+            },
+                onDeleteAll = {
+                    mainViewModel.deleteAll()
+                },
+                onUpload = {
+                    Toast.makeText(
+                        context,
+                        "Hỗ trợ cả định dạng Excel .xls và .xlsx",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    importLauncher.launch(arrayOf("*/*"))
+                }
+            ) {
                 selectAll = it
+                mainViewModel.selectAll()
             }
         },
         bottomBar = {
@@ -112,7 +137,7 @@ fun MainScreen(mainViewModel: MainViewModel = hiltViewModel()) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            "$index. ${customer.name}", modifier = Modifier
+                            "${index + 1}. ${customer.name}", modifier = Modifier
                                 .weight(weights[0]),
                             style = TextStyle(textAlign = TextAlign.Center)
                         )
@@ -126,12 +151,15 @@ fun MainScreen(mainViewModel: MainViewModel = hiltViewModel()) {
                         Checkbox(
                             selected || selectAll, onCheckedChange = {
                                 selected = it
+                                mainViewModel.select(customer)
                             }, modifier = Modifier
                                 .weight(weights[2])
                         )
 
                         IconButton(
-                            onClick = {}, modifier = Modifier
+                            onClick = {
+                                mainViewModel.delete(customer)
+                            }, modifier = Modifier
                                 .weight(weights[3])
                         ) {
                             Icon(Icons.Default.Delete, contentDescription = null)

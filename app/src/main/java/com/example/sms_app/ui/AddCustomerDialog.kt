@@ -1,30 +1,55 @@
 package com.example.sms_app.ui
 
+import android.util.Log
+import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.sms_app.data.Customer
-import com.example.sms_app.utils.SmsUtils
+import com.example.sms_app.utils.isValidPhoneNumber
+import com.example.sms_app.utils.validateAndFormatPhoneNumber
 import java.util.UUID
-import android.util.Log
-import android.widget.Toast
-import androidx.compose.ui.platform.LocalContext
 
 @Composable
 fun AddCustomerDialog(
@@ -192,9 +217,9 @@ fun AddCustomerDialog(
                     onClick = {
                         if (name.isNotEmpty() && phoneNumber.isNotEmpty()) {
                             // Format and validate phone number
-                            val formattedPhoneNumber = SmsUtils.validateAndFormatPhoneNumber(phoneNumber)
+                            val formattedPhoneNumber = phoneNumber.validateAndFormatPhoneNumber()
                             
-                            if (SmsUtils.isValidPhoneNumber(formattedPhoneNumber)) {
+                            if (formattedPhoneNumber.isValidPhoneNumber()) {
                                 val customer = Customer(
                                     id = UUID.randomUUID().toString(),
                                     name = name,
@@ -253,7 +278,7 @@ fun AddCustomerDialog(
 }
 
 @Composable
-fun CustomerField(
+private fun CustomerField(
     label: String,
     value: String,
     onValueChange: (String) -> Unit,

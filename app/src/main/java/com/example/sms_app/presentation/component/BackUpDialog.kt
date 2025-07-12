@@ -25,19 +25,24 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.sms_app.presentation.viewmodel.BackUpViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BackUpDialog(onDismissRequest: () -> Unit) {
+fun BackUpDialog(backUpViewModel: BackUpViewModel = hiltViewModel(), onDismissRequest: () -> Unit) {
     val date = SimpleDateFormat("dd-MM-yyyy", java.util.Locale("vi")).format(Date())
     var name by remember {
-        mutableStateOf("${date}_${System.currentTimeMillis()}.xls")
+        mutableStateOf("${date}_${System.currentTimeMillis()}.csv")
     }
     var isConfirm by remember {
         mutableStateOf(false)
+    }
+    var msg by remember {
+        mutableStateOf("")
     }
     BasicAlertDialog(onDismissRequest = onDismissRequest, modifier = Modifier.padding(8.dp)) {
         Card {
@@ -60,7 +65,13 @@ fun BackUpDialog(onDismissRequest: () -> Unit) {
 
                 TextField(name, onValueChange = { name = it }, modifier = Modifier.fillMaxWidth())
                 TextButton(onClick = {
-                    isConfirm = true
+                    backUpViewModel.backUp(
+                        name,
+                        onResponse = {
+                            isConfirm = true
+                            msg = it
+                        }
+                    )
                 }, modifier = Modifier.fillMaxWidth()) {
                     Text("Bắt đầu")
                 }
@@ -80,7 +91,7 @@ fun BackUpDialog(onDismissRequest: () -> Unit) {
                 Text("Thông báo")
             },
             text = {
-                Text("Đã sao lưu khách hàng tại Download/SMSS/$name")
+                Text(msg)
             },
             confirmButton = {
                 TextButton(onClick = {

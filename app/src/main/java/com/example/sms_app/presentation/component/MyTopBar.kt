@@ -4,9 +4,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteForever
+import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -22,7 +26,12 @@ import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MyTopBar(onCheckedChange: ((Boolean) -> Unit)) {
+fun MyTopBar(
+    onSync: () -> Unit,
+    onDeleteAll: () -> Unit,
+    onUpload: () -> Unit,
+    onCheckedChange: ((Boolean) -> Unit)
+) {
     var selectAll by remember {
         mutableStateOf(false)
     }
@@ -42,15 +51,23 @@ fun MyTopBar(onCheckedChange: ((Boolean) -> Unit)) {
             }
             Spacer(Modifier.width(10.dp))
             OutlinedButton(
-                onClick = {}
+                onClick = {
+                    onDeleteAll()
+                }
             ) {
-                Text("Xóa tất cả")
+                Icon(Icons.Default.DeleteForever, null)
             }
             Spacer(Modifier.width(4.dp))
             OutlinedButton(
-                onClick = {}
+                onClick = {
+                    onUpload()
+                }
             ) {
-                Text("Chọn tệp")
+                Icon(Icons.Default.FileUpload, null)
+            }
+            Spacer(Modifier.width(4.dp))
+            OutlinedButton(onClick = { onSync() }) {
+                Icon(Icons.Default.Sync, null)
             }
         },
     )

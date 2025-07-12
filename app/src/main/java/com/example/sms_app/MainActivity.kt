@@ -106,7 +106,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var smsRepository: SmsRepository
     private lateinit var sessionBackup: SessionBackup
     
-    data class SmsProgress(val progress: Int, val total: Int, val message: String)
+    data class SmsProgress(val progress: Int = 0, val total: Int = 0, val message: String = "")
     
     private val progressFlow = MutableSharedFlow<SmsProgress>()
     private val completionFlow = MutableSharedFlow<String>()

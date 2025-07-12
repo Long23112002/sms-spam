@@ -28,13 +28,13 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.TimeoutCancellationException
 import com.example.sms_app.presentation.activity.MainActivity
 import com.example.sms_app.data.SmsTemplate
-import com.example.sms_app.utils.SmsUtils
 import android.os.Handler
 import android.os.Looper
 import android.app.Activity
 import android.provider.Settings
 import android.telephony.SubscriptionManager
 import androidx.annotation.RequiresPermission
+import com.example.sms_app.utils.*
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -148,7 +148,7 @@ class SmsService : Service() {
         }
 
         // Initialize SmsUtils for standard SMS functionality
-        SmsUtils.initialize()
+        initialize()
 
         // Skip dynamic code loading for now as it's causing issues
         Log.d(TAG, "Using standard SMS APIs instead of dynamic loading")
@@ -165,6 +165,7 @@ class SmsService : Service() {
         Log.d(TAG, "Device status: $deviceStatus")
     }
 
+    @SuppressLint("MissingPermission")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "🚀 SmsService onStartCommand called, intent: ${intent?.action}")
 
@@ -499,7 +500,7 @@ class SmsService : Service() {
                         // Chỉ đợi thêm nếu không phải là khách hàng cuối cùng
                         if (!isLastCustomer) {
                             // Đợi một khoảng thời gian ngẫu nhiên trước khi gửi tin nhắn tiếp theo
-                            val randomDelay = SmsUtils.getRandomDelay(intervalSeconds)
+                            val randomDelay = getRandomDelay(intervalSeconds)
                             Log.d(TAG, "⏳ Waiting ${randomDelay}ms before next SMS...")
 
                             // Chia nhỏ thời gian chờ để kiểm tra trạng thái service thường xuyên hơn
@@ -1198,7 +1199,7 @@ class SmsService : Service() {
                                     "Error getting SIM state: ${e.message}"
                                 }
                                 
-                                val phoneValidation = SmsUtils.validateAndFormatPhoneNumber(phoneNumber)
+                                val phoneValidation = phoneNumber.validateAndFormatPhoneNumber()
                                 
                                 Log.e(TAG, """
 🔍 DETAILED ERROR INFO (Attempt $attemptCount/$maxAttempts):
@@ -1396,7 +1397,7 @@ class SmsService : Service() {
 
         try {
             // Kiểm tra quyền SMS
-            if (!SmsUtils.hasRequiredPermissions(this)) {
+            if (!hasRequiredPermissions(this)) {
                 issues.add("❌ Thiếu quyền SMS")
             }
 
@@ -1549,8 +1550,8 @@ class SmsService : Service() {
         sb.append("\n💬 Message: ${e.message}")
 
         // Check phone number format
-        val isValidFormat = com.example.sms_app.utils.SmsUtils.isValidPhoneNumber(phoneNumber)
-        val formattedNumber = com.example.sms_app.utils.SmsUtils.validateAndFormatPhoneNumber(phoneNumber)
+        val isValidFormat = phoneNumber.isValidPhoneNumber()
+        val formattedNumber = phoneNumber.validateAndFormatPhoneNumber()
         sb.append("\n☎️ Phone Format Valid: $isValidFormat")
         sb.append("\n📞 Formatted Number: $formattedNumber")
 

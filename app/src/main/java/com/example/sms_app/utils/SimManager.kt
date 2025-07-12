@@ -11,10 +11,10 @@ import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
 
 data class SimInfo(
-    val subscriptionId: Int,
-    val simSlotIndex: Int,
-    val displayName: String,
-    val carrierName: String,
+    val subscriptionId: Int = 0,
+    val simSlotIndex: Int = 0,
+    val displayName: String = "",
+    val carrierName: String = "",
     val phoneNumber: String? = null
 )
 

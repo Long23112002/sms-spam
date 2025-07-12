@@ -1,11 +1,13 @@
 package com.example.sms_app.data
 
 import android.content.Context
-import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import dagger.hilt.android.qualifiers.ApplicationContext
+import javax.inject.Inject
+import androidx.core.content.edit
 
-class SmsRepository(context: Context) {
+class SmsRepository @Inject constructor (@ApplicationContext context: Context) {
     private val prefs = context.getSharedPreferences("sms_app_prefs", Context.MODE_PRIVATE)
     private val gson = Gson()
 

@@ -9,5 +9,12 @@ data class AppSettings(
     val addRandomEmoji: Boolean = false, // Thêm emoji ngẫu nhiên vào tin nhắn
     val useRandomSpacing: Boolean = false, // Sử dụng khoảng cách ngẫu nhiên
     val minIntervalSeconds: Int = 20, // Thời gian tối thiểu giữa các tin nhắn
-    val maxIntervalSeconds: Int = 35 // Thời gian tối đa giữa các tin nhắn
-) 
+    val maxIntervalSeconds: Int = 35, // Thời gian tối đa giữa các tin nhắn
+
+    val enableVibrate: Boolean = false,
+    val enableSound: Boolean = false,
+    val enableFilter: Boolean = false,
+    val isRandomNumber: Boolean = false,
+    val isLimitCustomer: Boolean = false,
+    val enableUpdate: Boolean = false,
+)
