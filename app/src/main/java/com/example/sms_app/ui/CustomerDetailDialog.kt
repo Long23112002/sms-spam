@@ -18,8 +18,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.sms_app.data.Customer
 import com.example.sms_app.data.MessageTemplate
-import com.example.sms_app.utils.SmsUtils
+
 import android.util.Log
+import com.example.sms_app.utils.isValidPhoneNumber
+import com.example.sms_app.utils.validateAndFormatPhoneNumber
 
 @Composable
 fun CustomerDetailDialog(
@@ -31,8 +33,8 @@ fun CustomerDetailDialog(
     val actualTemplateId = defaultTemplateId
     val selectedTemplate = templates.find { it.id == actualTemplateId }
 
-    val isPhoneNumberValid = SmsUtils.isValidPhoneNumber(customer.phoneNumber)
-    val formattedPhoneNumber = SmsUtils.validateAndFormatPhoneNumber(customer.phoneNumber)
+    val isPhoneNumberValid = customer.phoneNumber.isValidPhoneNumber()
+    val formattedPhoneNumber = customer.phoneNumber.validateAndFormatPhoneNumber()
 
     if (!isPhoneNumberValid || formattedPhoneNumber != customer.phoneNumber) {
         Log.w("CustomerDetailDialog", "Phone number issue detected: " +

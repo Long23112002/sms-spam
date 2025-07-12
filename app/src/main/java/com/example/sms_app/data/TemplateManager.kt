@@ -1,9 +1,9 @@
 package com.example.sms_app.data
 
 data class MessageTemplate(
-    val id: Int,
-    val content: String,
-    val description: String
+    val id: Int = 1,
+    val content: String = "",
+    val description: String = ""
 )
 
 object TemplateManager {

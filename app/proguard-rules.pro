@@ -22,8 +22,8 @@
 -renamesourcefileattribute SourceFile
 
 # Giữ lại các class chính của ứng dụng
--keep public class com.example.sms_app.MainActivity
--keep public class com.example.sms_app.SmsApplication
+-keep public class com.example.sms_app.presentation.activity.MainActivity
+-keep public class com.example.sms_app.presentation.SmsApplication
 -keep public class com.example.sms_app.service.SmsService
 -keep public class com.example.sms_app.service.HiddenSmsReceiver
 

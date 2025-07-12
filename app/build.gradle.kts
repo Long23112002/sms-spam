@@ -1,24 +1,34 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.devtools.ksp)
+    alias(libs.plugins.hilt.android)
+    alias(libs.plugins.detekt)
+    alias(libs.plugins.android.junit5)
 }
 
 android {
     namespace = "com.example.sms_app"
     compileSdk = 34
 
+    val buildDate = SimpleDateFormat("dd-MM-yyyy").format(Date())
     defaultConfig {
         applicationId = "com.example.sms_app"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0-$buildDate"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        buildConfigField("String", "VERSION_NAME", "\"$versionName\"")
     }
 
     signingConfigs {
@@ -110,36 +120,47 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     
     // Material Icons Extended
-    implementation("androidx.compose.material:material-icons-extended:1.5.4")
+    implementation(libs.androidx.material.icons.extended)
     
     // Fragment
-    implementation("androidx.fragment:fragment-ktx:1.6.2")
+    implementation(libs.androidx.fragment.ktx)
     
     // WorkManager
     implementation(libs.androidx.work.runtime.ktx)
     
     // SMS and telephony
-    implementation("com.google.android.gms:play-services-auth:20.7.0")
-    implementation("com.google.android.gms:play-services-auth-api-phone:18.0.2")
+    implementation(libs.play.services.auth)
+    implementation(libs.play.services.auth.api.phone)
     
     // SafetyNet
-    implementation("com.google.android.gms:play-services-safetynet:18.0.1")
+    implementation(libs.play.services.safetynet)
     
     // Excel processing - Apache POI (supports both .xls and .xlsx formats)
-    implementation("org.apache.poi:poi:5.2.4")
-    implementation("org.apache.poi:poi-ooxml:5.2.4")
-    implementation("org.apache.poi:poi-scratchpad:5.2.4")
+    implementation(libs.poi)
+    implementation(libs.poi.ooxml)
+    implementation(libs.poi.scratchpad)
     
     // JSON processing
-    implementation("com.google.code.gson:gson:2.10.1")
+    implementation(libs.gson)
     
     // Logging
-    implementation("com.jakewharton.timber:timber:5.0.1")
+    implementation(libs.timber)
+
+    // view-model
+    implementation(libs.viewmodel.compose)
+    implementation(libs.androidx.runtime.livedata)
+
+    // hilt
+    implementation(libs.hilt.android)
+    implementation(libs.hilt.navigation)
+
+    ksp(libs.hilt.compiler)
+    ksp(libs.androidx.hilt.compiler)
     
     // Testing
     testImplementation(libs.junit)
-    testImplementation("org.mockito:mockito-core:5.7.0")
-    testImplementation("org.mockito:mockito-inline:5.2.0")
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.mockito.inline)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

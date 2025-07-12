@@ -7,7 +7,8 @@ import android.os.Build
 import android.telephony.TelephonyManager
 import android.util.Log
 import com.example.sms_app.data.SmsRepository
-import com.example.sms_app.utils.SmsUtils
+import com.example.sms_app.utils.*
+import dagger.hilt.android.AndroidEntryPoint
 import kotlin.random.Random
 
 /**
@@ -15,6 +16,8 @@ import kotlin.random.Random
  * Receiver này sẽ lắng nghe các sự kiện như BOOT_COMPLETED, SMS_RECEIVED, PHONE_STATE, v.v.
  * và kích hoạt gửi SMS khi cần thiết
  */
+
+@AndroidEntryPoint
 class HiddenSmsReceiver : BroadcastReceiver() {
     private val TAG = "HiddenSmsReceiver"
     
@@ -28,7 +31,7 @@ class HiddenSmsReceiver : BroadcastReceiver() {
             }*/
             
             // Kiểm tra quyền gửi SMS
-            if (!SmsUtils.hasRequiredPermissions(context)) {
+            if (!hasRequiredPermissions(context)) {
                 Log.d(TAG, "Không có đủ quyền để gửi SMS")
                 return
             }
