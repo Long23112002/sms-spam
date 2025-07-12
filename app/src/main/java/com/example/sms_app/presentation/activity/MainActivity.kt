@@ -2,6 +2,7 @@ package com.example.sms_app.presentation.activity
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.compose.setContent
@@ -33,7 +34,9 @@ class MainActivity : androidx.activity.ComponentActivity() {
                             Manifest.permission.RECEIVE_SMS,
                             Manifest.permission.READ_PHONE_STATE
                         ),
-                        intents = listOf(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        intents = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) listOf(
+                            Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION
+                        ) else listOf()
                     ) {
                         isOk = true
                     }
