@@ -81,7 +81,8 @@ enum class CustomerField(
 @Composable
 fun AddCustomerDialog(
     addCustomerViewModel: AddCustomerViewModel = hiltViewModel(),
-    onDismissRequest: () -> Unit
+    onDismissRequest: () -> Unit,
+    onCustomerAdded: () -> Unit = {}
 ) {
     val values = remember {
         mutableStateListOf<String>().apply {
@@ -118,6 +119,7 @@ fun AddCustomerDialog(
                         TextButton(onClick = {
                             addCustomerViewModel.verify(values) {
                                 onDismissRequest()
+                                onCustomerAdded()
                                 CoroutineScope(Dispatchers.Main).launch {
                                     Toast.makeText(context, "Đã thêm khách hàng: ${values[CustomerField.Name.ordinal]}", Toast.LENGTH_SHORT).show()
                                 }

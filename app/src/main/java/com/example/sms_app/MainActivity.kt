@@ -763,7 +763,7 @@ fun SmsApp(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    listOf("Tất cả", "Viettel", "Mobifone", "Vinaphone").forEach { carrier ->
+                    listOf("Tất cả", "Viettel", "Mobifone", "Vinaphone", "Vietnamobile").forEach { carrier ->
                         FilterChip(
                             text = carrier,
                             isSelected = selectedCarrier == carrier,

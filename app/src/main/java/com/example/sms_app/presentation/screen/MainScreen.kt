@@ -12,12 +12,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
@@ -40,12 +42,29 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun MainScreen(mainViewModel: MainViewModel = hiltViewModel()) {
-    val providers = listOf("viettel", "mobifone", "vinaphone")
+    val providers = listOf("viettel", "mobifone", "vinaphone", "vietnamobile")
     var selectAll by remember {
         mutableStateOf(false)
     }
-    val customers = mainViewModel.customers.observeAsState(listOf()).value
+    var selectedProvider by remember {
+        mutableStateOf("all")
+    }
+    var customerToDelete by remember {
+        mutableStateOf<com.example.sms_app.data.Customer?>(null)
+    }
+    val allCustomers = mainViewModel.customers.observeAsState(listOf()).value
     val context = LocalContext.current
+    
+    // Filter customers based on selected provider
+    val customers = remember(allCustomers, selectedProvider) {
+        if (selectedProvider == "all") {
+            allCustomers
+        } else {
+            allCustomers.filter { customer ->
+                customer.carrier.lowercase() == selectedProvider.lowercase()
+            }
+        }
+    }
 
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -63,9 +82,6 @@ fun MainScreen(mainViewModel: MainViewModel = hiltViewModel()) {
         modifier = Modifier.fillMaxSize(),
         topBar = {
             MyTopBar(
-                onSync = {
-                mainViewModel.sync()
-            },
                 onDeleteAll = {
                     mainViewModel.deleteAll()
                 },
@@ -83,9 +99,16 @@ fun MainScreen(mainViewModel: MainViewModel = hiltViewModel()) {
             }
         },
         bottomBar = {
-            MyBottomBar(providers) {
-
-            }
+            MyBottomBar(
+                providers = providers,
+                onBottomButton = { },
+                onProviderSelected = { provider ->
+                    selectedProvider = provider
+                },
+                onCustomerAdded = {
+                    mainViewModel.sync()
+                }
+            )
         }
     ) { paddingValues ->
         Column(
@@ -137,7 +160,7 @@ fun MainScreen(mainViewModel: MainViewModel = hiltViewModel()) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(
-                            "${index + 1}. ${customer.name}", modifier = Modifier
+                            customer.name, modifier = Modifier
                                 .weight(weights[0]),
                             style = TextStyle(textAlign = TextAlign.Center)
                         )
@@ -158,7 +181,7 @@ fun MainScreen(mainViewModel: MainViewModel = hiltViewModel()) {
 
                         IconButton(
                             onClick = {
-                                mainViewModel.delete(customer)
+                                customerToDelete = customer
                             }, modifier = Modifier
                                 .weight(weights[3])
                         ) {
@@ -168,5 +191,35 @@ fun MainScreen(mainViewModel: MainViewModel = hiltViewModel()) {
                 }
             }
         }
+    }
+    
+    // Confirmation dialog for delete individual customer
+    customerToDelete?.let { customer ->
+        AlertDialog(
+            onDismissRequest = { customerToDelete = null },
+            title = {
+                Text("Xác nhận xóa khách hàng")
+            },
+            text = {
+                Text("Bạn có chắc chắn muốn xóa khách hàng \"${customer.name}\" không? Hành động này không thể hoàn tác.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        mainViewModel.delete(customer)
+                        customerToDelete = null
+                    }
+                ) {
+                    Text("Xóa")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { customerToDelete = null }
+                ) {
+                    Text("Hủy")
+                }
+            }
+        )
     }
 }

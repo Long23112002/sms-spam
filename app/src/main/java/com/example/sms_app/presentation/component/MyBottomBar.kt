@@ -65,7 +65,9 @@ enum class BottomButton(val icon: ImageVector) {
 fun MyBottomBar(
     providers: List<String>,
     sendMessageViewModel: SendMessageViewModel = hiltViewModel(),
-    onBottomButton: ((BottomButton) -> Unit)
+    onBottomButton: ((BottomButton) -> Unit),
+    onProviderSelected: ((String) -> Unit) = {},
+    onCustomerAdded: (() -> Unit) = {}
 ) {
     var button by remember {
         mutableStateOf(BottomButton.None)
@@ -132,8 +134,8 @@ fun MyBottomBar(
                 Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                var all by remember {
-                    mutableStateOf(true)
+                var selectedProvider by remember {
+                    mutableStateOf("all")
                 }
                 Text("Lọc theo nhà mạng")
                 Row(
@@ -142,19 +144,26 @@ fun MyBottomBar(
                         .horizontalScroll(rememberScrollState())
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = all, onClick = { all = !all })
+                        RadioButton(
+                            selected = selectedProvider == "all",
+                            onClick = { 
+                                selectedProvider = "all"
+                                onProviderSelected("all")
+                            }
+                        )
                         Text("Tất cả")
                     }
 
-                    providers.forEach {
-                        var selected by remember {
-                            mutableStateOf(false)
-                        }
+                    providers.forEach { provider ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(
-                                selected = selected || all,
-                                onClick = { selected = !selected })
-                            Text(it.capitalize(Locale.current))
+                                selected = selectedProvider == provider,
+                                onClick = { 
+                                    selectedProvider = provider
+                                    onProviderSelected(provider)
+                                }
+                            )
+                            Text(provider.capitalize(Locale.current))
                         }
                     }
                 }
@@ -181,9 +190,14 @@ fun MyBottomBar(
 
     when (button) {
         BottomButton.Add -> {
-            AddCustomerDialog {
-                button = BottomButton.None
-            }
+            AddCustomerDialog(
+                onDismissRequest = {
+                    button = BottomButton.None
+                },
+                onCustomerAdded = {
+                    onCustomerAdded()
+                }
+            )
         }
 
         BottomButton.Send -> {

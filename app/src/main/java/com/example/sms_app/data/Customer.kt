@@ -46,6 +46,8 @@ data class Customer(
                 phone.startsWith("083") || phone.startsWith("084") || phone.startsWith("085") || 
                 phone.startsWith("081") || phone.startsWith("082") -> "Vinaphone"
                 
+                phone.startsWith("056") || phone.startsWith("058") || phone.startsWith("092") -> "Vietnamobile"
+                
                 else -> "Khác"
             }
         }
