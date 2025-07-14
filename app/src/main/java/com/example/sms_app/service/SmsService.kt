@@ -22,8 +22,6 @@ import kotlin.coroutines.resume
 import com.example.sms_app.R
 import com.example.sms_app.data.Customer
 import com.example.sms_app.data.SmsRepository
-import com.example.sms_app.data.SessionBackup
-import com.example.sms_app.data.SmsSession
 import kotlinx.coroutines.*
 import kotlinx.coroutines.TimeoutCancellationException
 import com.example.sms_app.presentation.activity.MainActivity
@@ -41,7 +39,6 @@ import dagger.hilt.android.AndroidEntryPoint
 class SmsService : Service() {
     private var serviceJob: Job? = null
     private lateinit var smsRepository: SmsRepository
-    private lateinit var sessionBackup: SessionBackup
     private lateinit var smsResultReceiver: BroadcastReceiver
     private lateinit var smsDeliveryReceiver: BroadcastReceiver
     private val pendingSmsResults = mutableMapOf<String, kotlinx.coroutines.CancellableContinuation<Boolean>>()
@@ -130,7 +127,6 @@ class SmsService : Service() {
         totalMessageCount = 0
 
         smsRepository = SmsRepository(applicationContext)
-        sessionBackup = SessionBackup(this)
 
         // Tạo notification channel cho Android 8.0 trở lên
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -248,9 +244,8 @@ class SmsService : Service() {
                 "⚠️ Dịch vụ gửi SMS đã dừng"
             }
             sendCompletionBroadcast(message)
-
-            // Cập nhật session backup
-            sessionBackup.updateSessionTime()
+            
+            Log.d(TAG, "Service destroyed after sending $totalSent SMS")
         } catch (e: Exception) {
             Log.e(TAG, "Error sending completion broadcast in onDestroy", e)
         }
@@ -271,7 +266,16 @@ class SmsService : Service() {
     @RequiresPermission(Manifest.permission.READ_PHONE_STATE)
     private fun startSendingSms() {
         try {
-            if (isRunning) return
+            if (isRunning) {
+                Log.w(TAG, "⚠️ SMS service is already running, ignoring new start request")
+                return
+            }
+
+            // Reset all counters and states
+            totalSent = 0
+            totalToSend = 0
+            Log.d(TAG, "🔄 Reset SMS counters: totalSent=$totalSent, totalToSend=$totalToSend")
+
             isRunning = true
 
             // Kiểm tra cài đặt thiết bị trước khi bắt đầu
@@ -285,7 +289,20 @@ class SmsService : Service() {
                 return
             }
 
-            val customers = smsRepository.getCustomers().filter { it.isSelected }
+            Log.d(TAG, "🚀 Starting SMS sending process")
+
+            val allCustomers = smsRepository.getCustomers()
+            var customers = allCustomers.filter { it.isSelected }
+            
+            // Áp dụng giới hạn khách hàng từ settings
+            val settings = smsRepository.getAppSettings()
+            if (settings.isLimitCustomer) {
+                Log.d(TAG, "🚫 Service applying customer limit: ${customers.size} → ${settings.customerLimit}")
+                customers = customers.take(settings.customerLimit)
+                Log.d(TAG, "✂️ Final customer list: ${customers.map { it.name }}")
+            } else {
+                Log.d(TAG, "🔍 Customer limit disabled in service - processing all ${customers.size} selected customers")
+            }
 
             // Debug logs to check what's being loaded
             val allTemplates = smsRepository.getTemplates()
@@ -312,7 +329,7 @@ class SmsService : Service() {
 
             if (customers.isEmpty()) {
                 Log.e(TAG, "❌ No customers selected for SMS")
-                sendCompletionBroadcast("Không có khách hàng được chọn")
+                sendCompletionBroadcast("❌ Không có khách hàng nào được chọn để gửi SMS")
                 stopSelf()
                 return
             }
@@ -332,17 +349,7 @@ class SmsService : Service() {
             Log.d(TAG, "🔤 Template content: ${template.content}")
             Log.d(TAG, "⚙️ Settings: interval=${intervalSeconds}s, maxRetry=$maxRetryAttempts, retryDelay=${retryDelaySeconds}s")
 
-            // Lưu trữ phiên làm việc hiện tại
-            val session = SmsSession(
-                sessionId = sessionBackup.generateSessionId(),
-                templateId = currentTemplateId,
-                totalCustomers = customers.size,
-                sentCount = 0,
-                remainingCustomers = customers,
-                startTime = System.currentTimeMillis(),
-                lastUpdateTime = System.currentTimeMillis()
-            )
-            sessionBackup.saveActiveSession(session)
+            Log.d(TAG, "🎯 Will send SMS to ${customers.size} customers")
 
             // Cập nhật notification để tăng mức độ ưu tiên
             val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
@@ -380,51 +387,60 @@ class SmsService : Service() {
             var totalRetries = 0
             val maxTotalRetries = maxRetryAttempts * 3 // Giới hạn số lần thử lại tổng cộng
 
-            // Thêm độ trễ ban đầu trước khi gửi tin nhắn đầu tiên
+            // Thêm initial delay trước tin nhắn đầu tiên
+            Log.d(TAG, "⏳ Đợi ${intervalSeconds}s trước khi gửi tin nhắn đầu tiên...")
+            val startTime = System.currentTimeMillis()
+            Log.d(TAG, "🕐 Service start time: ${startTime}")
+            
+            // Cập nhật notification trong lúc chờ
+            notificationManager.notify(
+                NOTIFICATION_ID,
+                createNotification("Chuẩn bị gửi tin nhắn...")
+            )
+            
+            // Thực hiện initial delay với countdown
             val initialDelay = intervalSeconds * 1000L
-            Log.d(TAG, "⏳ Áp dụng độ trễ ban đầu ${initialDelay}ms trước khi gửi tin nhắn đầu tiên...")
-
-            // Chia nhỏ thời gian chờ ban đầu để cập nhật UI thường xuyên
             var remainingInitialDelay = initialDelay
+            
             while (remainingInitialDelay > 0 && isRunning) {
                 val delayStep = minOf(1000L, remainingInitialDelay)
                 delay(delayStep)
                 remainingInitialDelay -= delayStep
-
-                // Cập nhật thông báo và UI mỗi giây
-                if (remainingInitialDelay % 1000 == 0L || remainingInitialDelay == 0L) {
+                
+                // Cập nhật notification mỗi giây
+                if (remainingInitialDelay % 1000 == 0L) {
                     val remainingSecs = remainingInitialDelay / 1000
-
-                    // Hiển thị thông tin trong notification
-                    val notificationMessage = "Chuẩn bị gửi tin nhắn... Còn lại: ${remainingSecs}s"
                     notificationManager.notify(
                         NOTIFICATION_ID,
-                        createNotification(notificationMessage)
+                        createNotification("Đợi ${remainingSecs}s trước khi gửi tin nhắn đầu tiên...")
                     )
-
-                    // Cập nhật UI thông qua broadcast
-                    if (customers.isNotEmpty()) {
-                        val firstCustomer = customers[0]
-                        sendProgressBroadcast(
-                            0,
-                            totalToSend,
-                            "Còn lại: ${remainingSecs}s trước khi gửi cho ${firstCustomer.name}"
-                        )
-                    }
+                    Log.d(TAG, "⏳ Còn lại ${remainingSecs}s trước khi gửi tin nhắn đầu tiên")
                 }
             }
-
-            // Kiểm tra xem service có còn đang chạy không sau khi đợi
+            
             if (!isRunning) {
-                Log.d(TAG, "Service stopped during initial delay")
+                Log.d(TAG, "❌ Service stopped during initial delay")
                 return
             }
+            
+            Log.d(TAG, "🚀 Bắt đầu gửi SMS sau initial delay ${intervalSeconds}s")
+            
+            // Cập nhật notification
+            notificationManager.notify(
+                NOTIFICATION_ID,
+                createNotification("Bắt đầu gửi tin nhắn...")
+            )
 
-            for (customer in customers) {
+            for ((customerIndex, customer) in customers.withIndex()) {
                 if (!isRunning) {
                     Log.d(TAG, "Service stopped, breaking SMS sending loop")
                     break
                 }
+                
+                Log.i(TAG, "📋 Processing customer ${customerIndex + 1}/${totalToSend}: ${customer.name} (${customer.phoneNumber})")
+                
+                val currentTime = System.currentTimeMillis()
+                Log.d(TAG, "🕐 Current time: ${currentTime}")
 
                 try {
                     // Cập nhật notification để giữ service trong foreground
@@ -468,19 +484,15 @@ class SmsService : Service() {
 
                     if (success) {
                         totalSent++
-                        // Đánh dấu khách hàng đã được xử lý trong session backup
-                        sessionBackup.markCustomerProcessed(customer.id)
+                        Log.d(TAG, "✅ Customer ${customer.name} processed successfully")
 
                         // Xóa khách hàng khỏi danh sách UI sau khi gửi thành công
-                        // Nhưng vẫn giữ lại trong backup
                         deleteCustomerAfterSuccessfulSend(customer)
 
-                        // Gửi broadcast cập nhật tiến độ
-                        sendProgressBroadcast(
-                            totalSent,
-                            totalToSend,
-                            "✅ Đã gửi SMS cho ${customer.name} (${customer.phoneNumber})"
-                        )
+                        // Ghi lại thông tin để gửi broadcast sau khi delay xong
+                        val successMessage = "✅ Đã gửi SMS cho ${customer.name} (${customer.phoneNumber})"
+                        Log.d(TAG, "✅ SMS sent successfully to ${customer.name}")
+                        Log.d(TAG, "📋 Success recorded, will broadcast AFTER delay period (${intervalSeconds}s)")
 
                         // Tăng số lượng SMS đã gửi trong ngày
                         val updatedCount = smsRepository.incrementSmsCount(selectedSim)
@@ -495,13 +507,26 @@ class SmsService : Service() {
                         Log.d(TAG, "✅ SMS sent successfully to ${customer.name} (${customer.phoneNumber})")
 
                         // Kiểm tra xem đây có phải là khách hàng cuối cùng không
-                        val isLastCustomer = totalSent >= totalToSend
+                        val isLastCustomer = customerIndex >= customers.size - 1
+
+                        // Nếu đây là khách hàng cuối cùng, gửi completion broadcast ngay lập tức
+                        if (isLastCustomer) {
+                            val failedCount = totalToSend - totalSent
+                            val completionMessage = if (failedCount == 0) {
+                                "🏁 Đã hoàn thành gửi $totalSent/${totalToSend} tin nhắn"
+                            } else {
+                                "🏁 Đã hoàn thành: $totalSent thành công, $failedCount thất bại (tổng $totalToSend tin nhắn)"
+                            }
+                            sendCompletionBroadcast(completionMessage)
+                            Log.d(TAG, "🏁 Sent immediate completion broadcast for last customer")
+                        }
 
                         // Chỉ đợi thêm nếu không phải là khách hàng cuối cùng
                         if (!isLastCustomer) {
                             // Đợi một khoảng thời gian ngẫu nhiên trước khi gửi tin nhắn tiếp theo
                             val randomDelay = getRandomDelay(intervalSeconds)
-                            Log.d(TAG, "⏳ Waiting ${randomDelay}ms before next SMS...")
+                            Log.d(TAG, "⏳ Waiting ${randomDelay}ms (${randomDelay/1000}s) before next SMS...")
+                            Log.d(TAG, "⏳ Interval setting: ${intervalSeconds}s")
 
                             // Chia nhỏ thời gian chờ để kiểm tra trạng thái service thường xuyên hơn
                             val checkInterval = 1000L // 1 giây
@@ -515,16 +540,17 @@ class SmsService : Service() {
                                 // Cập nhật notification để giữ service trong foreground - thường xuyên hơn
                                 if (remainingDelay % 1000 == 0L) { // Cập nhật mỗi 1 giây
                                     val remainingSecs = remainingDelay / 1000
-                                    val nextCustomerIndex = totalSent
+                                    val nextCustomerIndex = customerIndex + 1
 
                                     // Tính tổng thời gian còn lại cho tất cả tin nhắn
                                     val remainingCustomers = totalToSend - totalSent
-                                    val totalRemainingSeconds = remainingSecs + (remainingCustomers * intervalSeconds)
+                                    // remainingCustomers bao gồm cả customer hiện tại đang delay
+                                    val totalRemainingSeconds = remainingSecs + ((remainingCustomers - 1) * intervalSeconds)
                                     val totalRemainingMinutes = totalRemainingSeconds / 60
                                     val totalRemainingSecsDisplay = totalRemainingSeconds % 60
 
                                     // Hiển thị thông tin chi tiết hơn trong notification
-                                    val notificationMessage = if (nextCustomerIndex < totalToSend) {
+                                    val notificationMessage = if (nextCustomerIndex < customers.size) {
                                         val nextCustomer = customers[nextCustomerIndex]
                                         "Đã gửi $totalSent/$totalToSend tin nhắn. Còn lại: ${remainingSecs}s trước khi gửi cho ${nextCustomer.name}"
                                     } else {
@@ -537,7 +563,7 @@ class SmsService : Service() {
                                     )
 
                                     // Cập nhật UI thông qua broadcast với tổng thời gian còn lại
-                                    val progressMessage = if (nextCustomerIndex < totalToSend) {
+                                    val progressMessage = if (nextCustomerIndex < customers.size) {
                                         val nextCustomer = customers[nextCustomerIndex]
                                         if (remainingCustomers > 0) {
                                             "Còn lại: ${remainingSecs}s trước khi gửi cho ${nextCustomer.name} (Tổng: ${totalRemainingMinutes}m:${totalRemainingSecsDisplay}s)"
@@ -555,55 +581,124 @@ class SmsService : Service() {
                                     )
                                 }
                             }
+                            
+                            // Sau khi delay xong, gửi broadcast thành công
+                            Log.d(TAG, "⏰ Delay period completed, sending success broadcast")
+                            sendProgressBroadcast(
+                                totalSent,
+                                totalToSend,
+                                successMessage
+                            )
                         } else {
                             Log.d(TAG, "🏁 Đã gửi tin nhắn cho khách hàng cuối cùng, không cần đợi thêm")
+                            // Gửi broadcast ngay cho khách hàng cuối cùng
+                            sendProgressBroadcast(
+                                totalSent,
+                                totalToSend,
+                                successMessage
+                            )
                         }
                     } else {
                         Log.e(TAG, "❌ Failed to send SMS to ${customer.name} (${customer.phoneNumber}) after $retryCount retries")
+                        
+                        // KHÔNG DỪNG SERVICE - Chỉ log lỗi và tiếp tục với khách hàng tiếp theo
+                        Log.w(TAG, "⚠️ SMS failed for ${customer.name}, continuing with next customer")
+                        
+                        Log.w(TAG, "❌ Failed to send SMS to ${customer.name} after $retryCount attempts")
 
-                        // Đánh dấu session thất bại để có thể khôi phục sau này
-                        sessionBackup.markSessionFailed(customer.id, "Không thể gửi SMS sau $retryCount lần thử")
-
-                        sendProgressBroadcast(
-                            totalSent,
-                            totalToSend,
-                            "❌ Lỗi gửi ${customer.name} (${customer.phoneNumber}) sau $retryCount lần thử"
-                        )
+                        val failureMessage = "❌ Lỗi gửi ${customer.name} (${customer.phoneNumber}) sau $retryCount lần thử - Tiếp tục với người tiếp theo"
+                        
+                        // KHÔNG xóa customer khi gửi thất bại
+                        // Customer sẽ được giữ lại trong danh sách
+                        Log.d(TAG, "📋 Customer ${customer.name} kept in list due to failed sending")
+                        
+                        // Vẫn cần delay trước khi xử lý customer tiếp theo
+                        val isLastCustomer = customerIndex >= customers.size - 1
+                        
+                        if (!isLastCustomer) {
+                            val randomDelay = getRandomDelay(intervalSeconds)
+                            Log.d(TAG, "⏳ Waiting ${randomDelay}ms before next customer (after failure)...")
+                            delay(randomDelay)
+                            
+                            // Gửi broadcast sau khi delay xong
+                            Log.d(TAG, "⏰ Failure delay completed, sending failure broadcast")
+                            sendProgressBroadcast(
+                                totalSent,
+                                totalToSend,
+                                failureMessage
+                            )
+                        } else {
+                            // Gửi broadcast ngay cho khách hàng cuối cùng khi failed
+                            sendProgressBroadcast(
+                                totalSent,
+                                totalToSend,
+                                failureMessage
+                            )
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "💥 Error processing customer ${customer.name} (${customer.phoneNumber})", e)
 
-                    // Đánh dấu session thất bại để có thể khôi phục sau này
-                    sessionBackup.markSessionFailed(customer.id, "Lỗi xử lý: ${e.message}")
+                    // KHÔNG DỪNG SERVICE - Chỉ log lỗi và tiếp tục với khách hàng tiếp theo
+                    Log.w(TAG, "⚠️ Exception for ${customer.name}, continuing with next customer")
+                    
+                    Log.e(TAG, "💥 Processing error for ${customer.name}: ${e.message}")
 
-                    sendProgressBroadcast(
-                        totalSent,
-                        totalToSend,
-                        "💥 Lỗi xử lý ${customer.name}: ${e.message}"
-                    )
+                    val exceptionMessage = "💥 Lỗi xử lý ${customer.name}: ${e.message} - Tiếp tục với người tiếp theo"
 
-                    // Đợi một khoảng thời gian trước khi xử lý khách hàng tiếp theo
-                    delay(5000)
+                    // KHÔNG xóa customer khi có exception
+                    // Customer sẽ được giữ lại trong danh sách
+                    Log.d(TAG, "📋 Customer ${customer.name} kept in list due to processing exception")
+                    
+                    // Vẫn cần delay trước khi xử lý customer tiếp theo
+                    val isLastCustomer = customerIndex >= customers.size - 1
+                    
+                    if (!isLastCustomer) {
+                        val randomDelay = getRandomDelay(intervalSeconds)
+                        Log.d(TAG, "⏳ Waiting ${randomDelay}ms before next customer (after exception)...")
+                        delay(randomDelay)
+                        
+                        // Gửi broadcast sau khi delay xong
+                        Log.d(TAG, "⏰ Exception delay completed, sending exception broadcast")
+                        sendProgressBroadcast(
+                            totalSent,
+                            totalToSend,
+                            exceptionMessage
+                        )
+                    } else {
+                        // Gửi broadcast ngay cho khách hàng cuối cùng khi exception
+                        sendProgressBroadcast(
+                            totalSent,
+                            totalToSend,
+                            exceptionMessage
+                        )
+                    }
                 }
 
-                // Cập nhật thời gian hoạt động của session
-                sessionBackup.updateSessionTime()
+                // Continue processing next customer
+                Log.d(TAG, "🔄 Finished processing customer ${customer.name}")
             }
 
             // Hoàn thành gửi SMS
-            Log.i(TAG, "🏁 SMS sending completed: $totalSent/$totalToSend messages sent")
-            sendCompletionBroadcast("🏁 Đã hoàn thành gửi $totalSent/${totalToSend} tin nhắn")
+            val failedCount = totalToSend - totalSent
+            Log.i(TAG, "🏁 SMS sending completed: $totalSent/$totalToSend messages sent, $failedCount failed")
+            
+            val completionMessage = if (failedCount == 0) {
+                "🏁 Đã hoàn thành gửi $totalSent/${totalToSend} tin nhắn"
+            } else {
+                "🏁 Đã hoàn thành: $totalSent thành công, $failedCount thất bại (tổng $totalToSend tin nhắn)"
+            }
+            
+            sendCompletionBroadcast(completionMessage)
 
-            // Đánh dấu phiên làm việc đã hoàn thành nhưng không xóa khách hàng
-            // Chỉ cập nhật trạng thái session để có thể khôi phục sau này
-            sessionBackup.completeSession()
+            Log.d(TAG, "🏁 SMS sending process completed")
 
             // Dừng service sau khi gửi thông báo hoàn thành
             stopSelf()
         } catch (e: Exception) {
             Log.e(TAG, "💥 Critical error in sendSmsToCustomers", e)
             sendCompletionBroadcast("💥 Lỗi nghiêm trọng: ${e.message}")
-            sessionBackup.updateSessionTime() // Cập nhật thời gian để có thể khôi phục
+            Log.e(TAG, "Service stopping due to critical error")
             stopSelf()
         }
     }
@@ -716,18 +811,23 @@ class SmsService : Service() {
             // Store attempts in queue
             attemptQueue[requestId] = attempts
             
+            // Store continuation for later use
+            pendingSmsResults[requestId] = continuation
+            Log.d(TAG, "💾 Stored continuation for requestId: $requestId")
+            
             // Start with first attempt
             executeNextAttempt(requestId)
             
             // Set up timeout mechanism
             CoroutineScope(Dispatchers.IO).launch {
                 delay(30000) // 30 second timeout
-                if (attemptQueue.containsKey(requestId)) {
+                if (pendingSmsResults.containsKey(requestId)) {
                     attemptQueue.remove(requestId)
                     activeAttempts.remove(requestId)
-                    if (continuation.isActive) {
-                        Log.e(TAG, "⏰ SMS sending timeout after 30 seconds")
-                        continuation.resume(false)
+                    val timeoutContinuation = pendingSmsResults.remove(requestId)
+                    if (timeoutContinuation?.isActive == true) {
+                        Log.e(TAG, "⏰ SMS sending timeout after 30 seconds for requestId: $requestId")
+                        timeoutContinuation.resume(false)
                     }
                 }
             }
@@ -1016,7 +1116,7 @@ class SmsService : Service() {
     private fun createNotification(message: String): android.app.Notification {
         createNotificationChannel()
 
-        val notificationIntent = Intent(this, MainActivity::class.java).apply {
+        val notificationIntent = Intent(this, com.example.sms_app.presentation.activity.MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
 
@@ -1167,11 +1267,16 @@ class SmsService : Service() {
                             Activity.RESULT_OK -> {
                                 Log.d(TAG, "✅ SMS sent successfully! (Attempt $attemptCount/$maxAttempts, Manager #$managerIndex)")
                                 
-                                // Success! Resume the continuation immediately
+                                // Success! Clean up and resume continuation
+                                val attempt = activeAttempts.remove(requestId)
+                                attemptQueue.remove(requestId)
                                 val continuation = pendingSmsResults.remove(requestId)
+                                
                                 if (continuation != null) {
                                     Log.d(TAG, "📤 SMS sent (requestId: $requestId, success: true)")
                                     continuation.resume(true)
+                                } else {
+                                    Log.w(TAG, "⚠️ No continuation found for successful SMS: $requestId")
                                 }
                             }
                             SmsManager.RESULT_ERROR_GENERIC_FAILURE -> {
@@ -1233,10 +1338,13 @@ class SmsService : Service() {
                                     
                                     val attempt = activeAttempts.remove(requestId)
                                     attemptQueue.remove(requestId)
+                                    val continuation = pendingSmsResults.remove(requestId)
                                     
-                                    if (attempt != null) {
+                                    if (continuation != null) {
                                         Log.d(TAG, "📤 SMS sent (requestId: $requestId, success: false)")
-                                        attempt.continuation.resume(false)
+                                        continuation.resume(false)
+                                    } else {
+                                        Log.w(TAG, "⚠️ No continuation found for failed SMS: $requestId")
                                     }
                                 }
                             }
@@ -1255,10 +1363,13 @@ class SmsService : Service() {
                                 // For these errors, we should fail immediately as they indicate system issues
                                 val attempt = activeAttempts.remove(requestId)
                                 attemptQueue.remove(requestId)
+                                val continuation = pendingSmsResults.remove(requestId)
                                 
-                                if (attempt != null) {
+                                if (continuation != null) {
                                     Log.d(TAG, "📤 SMS sent (requestId: $requestId, success: false) - System error")
-                                    attempt.continuation.resume(false)
+                                    continuation.resume(false)
+                                } else {
+                                    Log.w(TAG, "⚠️ No continuation found for failed SMS (system error): $requestId")
                                 }
                             }
                             else -> {
@@ -1276,9 +1387,12 @@ class SmsService : Service() {
                                 } else {
                                     val attempt = activeAttempts.remove(requestId)
                                     attemptQueue.remove(requestId)
+                                    val continuation = pendingSmsResults.remove(requestId)
                                     
-                                    if (attempt != null) {
-                                        attempt.continuation.resume(false)
+                                    if (continuation != null) {
+                                        continuation.resume(false)
+                                    } else {
+                                        Log.w(TAG, "⚠️ No continuation found for failed SMS (unknown error): $requestId")
                                     }
                                 }
                             }
@@ -1321,9 +1435,7 @@ class SmsService : Service() {
                                 // Lấy thông tin khách hàng từ map
                                 val customer = pendingSmsDeliveries.remove(requestId)
                                 if (customer != null) {
-                                    // Khách hàng đã được xóa ngay sau khi gửi SMS thành công
-                                    // Chỉ cần đánh dấu là đã xử lý trong session backup
-                                    sessionBackup.markCustomerProcessed(customer.id)
+                                    Log.d(TAG, "✅ SMS delivery confirmed for ${customer.name}")
 
                                     // Gửi broadcast cập nhật tiến độ
                                     sendProgressBroadcast(
@@ -1338,8 +1450,7 @@ class SmsService : Service() {
                             Activity.RESULT_CANCELED -> {
                                 Log.e(TAG, "❌ SMS delivery failed: Canceled (requestId: $requestId)")
 
-                                // Đánh dấu session thất bại
-                                sessionBackup.markSessionFailed(customerId, "SMS không đến được người nhận")
+                                Log.w(TAG, "SMS delivery failed for customer ID: $customerId")
 
                                 // Gửi broadcast cập nhật tiến độ
                                 sendProgressBroadcast(
@@ -1354,8 +1465,7 @@ class SmsService : Service() {
                                 // Khách hàng đã được xóa sau khi gửi SMS thành công
                                 val customer = pendingSmsDeliveries.remove(requestId)
                                 if (customer != null) {
-                                    // Chỉ đánh dấu khách hàng đã được xử lý trong session backup
-                                    sessionBackup.markCustomerProcessed(customer.id)
+                                    Log.d(TAG, "SMS delivery status unknown for ${customer.name}")
 
                                     // Gửi broadcast cập nhật tiến độ
                                     sendProgressBroadcast(
@@ -1455,9 +1565,6 @@ class SmsService : Service() {
     private fun deleteCustomerAfterSuccessfulSend(customer: Customer) {
         Log.d(TAG, "🗑️ Bắt đầu xóa khách hàng ${customer.name} (ID: ${customer.id})")
 
-        // Đánh dấu khách hàng đã được xử lý trong session backup trước khi xóa
-        sessionBackup.markCustomerProcessed(customer.id)
-
         // Lấy danh sách khách hàng hiện tại
         val currentCustomers = smsRepository.getCustomers()
 
@@ -1484,20 +1591,45 @@ class SmsService : Service() {
         } else {
             Log.d(TAG, "✅ Đã xóa thành công khách hàng ${customer.id}")
 
-            // Gửi broadcast thông báo đã xóa khách hàng
+            // Gửi broadcast thông báo đã xóa khách hàng với nhiều cơ chế đảm bảo
             val intent = Intent(ACTION_CUSTOMER_DELETED).apply {
                 putExtra(EXTRA_CUSTOMER_ID, customer.id)
+                putExtra(EXTRA_MESSAGE, "Đã xóa khách hàng ${customer.name} sau khi gửi SMS thành công")
+                addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+                addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
             }
-            sendBroadcast(intent)
-            Log.d(TAG, "📢 Đã gửi broadcast xóa khách hàng với ID: ${customer.id}")
+            
+            // Gửi broadcast ngay lập tức
+            try {
+                sendBroadcast(intent)
+                Log.d(TAG, "📢 Đã gửi broadcast xóa khách hàng với ID: ${customer.id}")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Lỗi gửi broadcast xóa khách hàng", e)
+            }
+            
+            // Gửi lại với applicationContext
+            try {
+                applicationContext.sendBroadcast(intent)
+                Log.d(TAG, "📢 Đã gửi broadcast xóa khách hàng qua applicationContext")
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Lỗi gửi broadcast qua applicationContext", e)
+            }
 
             // Đảm bảo broadcast được gửi bằng cách gửi thêm một lần nữa sau một khoảng thời gian ngắn
             Handler(Looper.getMainLooper()).postDelayed({
-                val retryIntent = Intent(ACTION_CUSTOMER_DELETED).apply {
-                    putExtra(EXTRA_CUSTOMER_ID, customer.id)
+                try {
+                    val retryIntent = Intent(ACTION_CUSTOMER_DELETED).apply {
+                        putExtra(EXTRA_CUSTOMER_ID, customer.id)
+                        putExtra(EXTRA_MESSAGE, "Đã xóa khách hàng ${customer.name} sau khi gửi SMS thành công")
+                        addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
+                        addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                    }
+                    sendBroadcast(retryIntent)
+                    applicationContext.sendBroadcast(retryIntent)
+                    Log.d(TAG, "📢 Gửi lại broadcast xóa khách hàng với ID: ${customer.id}")
+                } catch (e: Exception) {
+                    Log.e(TAG, "❌ Lỗi gửi lại broadcast xóa khách hàng", e)
                 }
-                sendBroadcast(retryIntent)
-                Log.d(TAG, "📢 Gửi lại broadcast xóa khách hàng với ID: ${customer.id}")
             }, 500)
         }
     }

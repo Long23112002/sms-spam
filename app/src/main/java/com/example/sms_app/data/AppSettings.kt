@@ -16,5 +16,6 @@ data class AppSettings(
     val enableFilter: Boolean = false,
     val isRandomNumber: Boolean = false,
     val isLimitCustomer: Boolean = false,
+    val customerLimit: Int = 20, // Giới hạn số khách hàng (mặc định 20)
     val enableUpdate: Boolean = false,
 )

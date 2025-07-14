@@ -11,6 +11,7 @@ buildscript {
         classpath(libs.hilt.android.gradle.plugin)
         classpath(libs.detekt.gradle.plugin)
         classpath(libs.dokka.gradle.plugin)
+        classpath(libs.google.services)
     }
 }
 

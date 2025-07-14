@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.sms_app.data.Customer
 import com.example.sms_app.data.SmsRepository
+import com.example.sms_app.data.SessionBackup
 import com.example.sms_app.presentation.component.CustomerField
 import com.example.sms_app.utils.isValidPhoneNumber
 import com.example.sms_app.utils.validateAndFormatPhoneNumber
@@ -25,7 +26,7 @@ class AddCustomerViewModel @Inject constructor(
 
         val customer: Customer? = formattedPhoneNumber.isValidPhoneNumber().takeIf { it }?.let {
             Customer(
-                id = System.currentTimeMillis().toString(),
+                id = "customer_${java.util.UUID.randomUUID()}",
                 name = CustomerField.Name.getValue(strings),
                 idNumber = CustomerField.Id.getValue(strings),
                 phoneNumber = formattedPhoneNumber,
@@ -47,10 +48,16 @@ class AddCustomerViewModel @Inject constructor(
                     }
                 )
 
+                // Xóa session backup khi thêm khách hàng mới
+                val sessionBackup = SessionBackup(getApplication())
+                sessionBackup.clearActiveSession()
+                clearCountdownData()
+                android.util.Log.d("AddCustomerViewModel", "🗑️ Cleared session backup and countdown data on customer add")
+
                 onSuccess()
             }
         }
     }
 
-    fun CustomerField.getValue(strings: List<String>) = strings[this.ordinal]
+    fun CustomerField.getValue(strings: List<String>) = strings[this.ordinal].trim()
 }

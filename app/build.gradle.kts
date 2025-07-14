@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.detekt)
     alias(libs.plugins.android.junit5)
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -21,7 +22,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 1
-        versionName = "1.0-$buildDate"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -142,9 +143,20 @@ dependencies {
     
     // JSON processing
     implementation(libs.gson)
+
+    // HTTP client for API calls
+    implementation("com.squareup.retrofit2:retrofit:2.9.0")
+    implementation("com.squareup.retrofit2:converter-gson:2.9.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
     
     // Logging
     implementation(libs.timber)
+
+    // Firebase
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.storage)
+    implementation(libs.firebase.database)
 
     // view-model
     implementation(libs.viewmodel.compose)

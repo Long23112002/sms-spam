@@ -34,6 +34,7 @@ viewModelVersion = "2.6.1"
 runtimeLivedata = "1.7.5"
 hiltCompiler = "1.2.0"
 navHiltVersion = "1.0.0"
+firebaseBom = "33.5.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -69,6 +70,11 @@ viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-
 androidx-runtime-livedata = { module = "androidx.compose.runtime:runtime-livedata", version.ref = "runtimeLivedata" }
 androidx-hilt-compiler = { module = "androidx.hilt:hilt-compiler", version.ref = "hiltCompiler" }
 hilt-navigation = {group="androidx.hilt", name="hilt-navigation-compose", version.ref="navHiltVersion"}
+
+# Firebase
+firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
+firebase-storage = { module = "com.google.firebase:firebase-storage" }
+firebase-database = { module = "com.google.firebase:firebase-database" }
 
 kotlin-gradle-plugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlinGradlePlugin" }
 android-junit5 = { module = "de.mannodermaus.gradle.plugins:android-junit5", version.ref = "androidJunit5" }

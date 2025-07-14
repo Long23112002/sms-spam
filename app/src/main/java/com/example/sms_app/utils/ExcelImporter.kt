@@ -133,22 +133,30 @@ class ExcelImporter(private val context: Context) {
             // Bước 1: Deep clean trước
             var cleaned = deepCleanExcelData(phoneNumber)
             
-            // Bước 2: Chỉ giữ lại số và dấu +
-            cleaned = cleaned.toCharArray().filter { it.isDigit() || it == '+' }.joinToString("")
+            // Bước 2: Xử lý format số điện thoại
             
-            // Bước 3: Xử lý đặc biệt cho số điện thoại từ Excel 
+            // Xử lý trường hợp có +84 ở đầu
+            if (cleaned.startsWith("+84")) {
+                Log.d("ExcelImporter", "📱 Phát hiện số điện thoại có +84: $cleaned")
+                cleaned = "0" + cleaned.substring(3)
+                Log.d("ExcelImporter", "📱 Chuyển +84 thành 0: $cleaned")
+            }
+            // Xử lý trường hợp có 84 ở đầu (không có dấu +)
+            else if (cleaned.startsWith("84") && cleaned.length >= 11) {
+                Log.d("ExcelImporter", "📱 Phát hiện số điện thoại có 84: $cleaned")
+                cleaned = "0" + cleaned.substring(2)
+                Log.d("ExcelImporter", "📱 Chuyển 84 thành 0: $cleaned")
+            }
             
-            // Kiểm tra rõ ràng - nếu không bắt đầu bằng 0, thêm 0 vào
+            // Bước 3: Chỉ giữ lại số (sau khi đã xử lý +84)
+            cleaned = cleaned.toCharArray().filter { it.isDigit() }.joinToString("")
+            
+            // Bước 4: Xử lý các trường hợp khác
             if (!cleaned.startsWith("0")) {
                 Log.d("ExcelImporter", "📱 Phát hiện số điện thoại không bắt đầu bằng 0: $cleaned")
                 
-                // Trường hợp có mã quốc gia 84 đứng đầu
-                if (cleaned.startsWith("84") && cleaned.length >= 11) {
-                    cleaned = "0" + cleaned.substring(2)
-                    Log.d("ExcelImporter", "📱 Chuyển mã quốc gia 84 thành số 0: $cleaned")
-                }
                 // Trường hợp có 9 chữ số (Excel thường xóa số 0 đầu của số điện thoại VN)
-                else if (cleaned.length == 9) {
+                if (cleaned.length == 9) {
                     cleaned = "0$cleaned"
                     Log.d("ExcelImporter", "📱 Tự động thêm số 0 đầu cho số điện thoại 9 chữ số: $cleaned")
                 }
@@ -380,9 +388,9 @@ class ExcelImporter(private val context: Context) {
                     Log.w("ExcelImporter", "⚠️ Warning: Invalid Vietnamese carrier prefix: $prefix in number $cleanedPhone")
                 }
                 
-                // Create customer object with UUID
+                // Create customer object with UUID-based ID to ensure uniqueness
                 val customer = Customer(
-                    id = UUID.randomUUID().toString(),
+                    id = "customer_${java.util.UUID.randomUUID()}",
                     name = name.trim(),
                     idNumber = idNumber.trim(),
                     phoneNumber = cleanedPhone,

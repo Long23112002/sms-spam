@@ -28,13 +28,11 @@ import androidx.compose.ui.unit.dp
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MyTopBar(
+    selectAll: Boolean,
     onDeleteAll: () -> Unit,
     onUpload: () -> Unit,
     onCheckedChange: ((Boolean) -> Unit)
 ) {
-    var selectAll by remember {
-        mutableStateOf(false)
-    }
     var showDeleteDialog by remember {
         mutableStateOf(false)
     }
@@ -42,10 +40,9 @@ fun MyTopBar(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
-                    selectAll,
-                    onCheckedChange = {
-                        selectAll = it
-                        onCheckedChange(it)
+                    checked = selectAll,
+                    onCheckedChange = { isChecked ->
+                        onCheckedChange(isChecked)
                     }
                 )
                 Text("Chọn tất cả")

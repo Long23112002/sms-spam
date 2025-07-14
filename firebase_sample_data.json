@@ -1,0 +1,10 @@
+{
+  "app_update": {
+    "versionCode": 2,
+    "versionName": "1.1.0",
+    "downloadUrl": "sms_app_v1.1.0.apk",
+    "releaseNotes": "🚀 Cập nhật mới v1.1.0:\n\n✅ Sửa lỗi hiển thị \"Hoàn thành gửi SMS\" ngay lập tức\n✅ Cải thiện hiệu suất gửi SMS\n✅ Thêm tính năng reset progress state\n✅ Sửa lỗi ID khách hàng trùng lặp khi import\n✅ Cải thiện UI/UX cho dialog gửi SMS\n✅ Thêm logging chi tiết để debug\n✅ Cải thiện xử lý session backup\n✅ Tối ưu hóa countdown timer\n\n🔧 Cải thiện kỹ thuật:\n• Sử dụng UUID thay vì hashCode cho ID khách hàng\n• Reset tất cả states khi bắt đầu gửi SMS mới\n• Xóa session backup khi cần thiết\n• Cải thiện error handling\n\n📱 Tương thích với Android 7.0+",
+    "forceUpdate": false,
+    "minSupportedVersion": 1
+  }
+}

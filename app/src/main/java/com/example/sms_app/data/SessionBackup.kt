@@ -132,8 +132,8 @@ class SessionBackup(private val context: Context) {
     }
     
     /**
-     * Đánh dấu một khách hàng đã được xử lý thành công
-     * Khách hàng vẫn được giữ trong danh sách để có thể khôi phục sau này
+     * Đánh dấu khách hàng gửi SMS THÀNH CÔNG - XÓA khỏi session cache
+     * Chỉ lưu lại những khách hàng THẤT BẠI trong session để khôi phục
      */
     fun markCustomerProcessed(customerId: String) {
         try {
@@ -141,17 +141,16 @@ class SessionBackup(private val context: Context) {
             // Tìm khách hàng trong danh sách còn lại
             val customer = session.remainingCustomers.find { it.id == customerId }
             if (customer != null) {
-                // Thêm vào danh sách đã hoàn thành
-                session.completedCustomers.add(customer)
+                // XÓA khách hàng khỏi remainingCustomers vì đã gửi THÀNH CÔNG
+                session.remainingCustomers = session.remainingCustomers.filter { it.id != customerId }
                 
-                // QUAN TRỌNG: KHÔNG loại bỏ khách hàng khỏi danh sách còn lại
-                // Để đảm bảo khách hàng vẫn được lưu trong backup
-                // Chỉ cập nhật số lượng đã gửi
+                // Thêm vào danh sách đã hoàn thành 
+                session.completedCustomers.add(customer)
                 session.sentCount = session.completedCustomers.size
                 session.lastUpdateTime = System.currentTimeMillis()
                 saveActiveSession(session)
                 
-                Log.d(TAG, "Marked customer $customerId as processed. Kept in backup for future reference.")
+                Log.d(TAG, "✅ Customer $customerId gửi THÀNH CÔNG - ĐÃ XÓA khỏi session cache")
             } else {
                 Log.d(TAG, "Customer $customerId not found in remaining customers list")
             }
@@ -309,11 +308,11 @@ class SessionBackup(private val context: Context) {
     
     /**
      * Khôi phục danh sách khách hàng từ một phiên làm việc cụ thể
-     * Bao gồm cả khách hàng đã được xử lý và chưa xử lý
+     * CHỈ trả về những khách hàng THẤT BẠI (chưa gửi thành công)
      */
     fun restoreCustomersFromSession(sessionId: String): List<Customer> {
         try {
-            Log.d(TAG, "Bắt đầu khôi phục khách hàng từ session ID: $sessionId")
+            Log.d(TAG, "Bắt đầu khôi phục khách hàng THẤT BẠI từ session ID: $sessionId")
             
             // Tìm phiên làm việc trong lịch sử
             val session = getSessionHistory().find { it.sessionId == sessionId }
@@ -323,34 +322,14 @@ class SessionBackup(private val context: Context) {
                 return emptyList()
             }
             
-            // Tạo danh sách đầy đủ bao gồm cả khách hàng đã xử lý và chưa xử lý
-            val allCustomers = mutableListOf<Customer>()
-            
-            // Thêm khách hàng còn lại (chưa xử lý)
-            allCustomers.addAll(session.remainingCustomers)
-            
-            // Thêm khách hàng đã hoàn thành (đã xử lý)
-            allCustomers.addAll(session.completedCustomers)
-            
-            // Đảm bảo không có khách hàng trùng lặp
-            val uniqueCustomers = allCustomers.distinctBy { it.id }
+            // CHỈ lấy khách hàng còn lại (THẤT BẠI) - không lấy những khách hàng đã thành công
+            val failedCustomers = session.remainingCustomers
             
             Log.d(TAG, "Đã tìm thấy session: ${session.sessionName}")
-            Log.d(TAG, "Tổng số khách hàng: ${uniqueCustomers.size} (Đã xử lý: ${session.completedCustomers.size}, Chưa xử lý: ${session.remainingCustomers.size})")
+            Log.d(TAG, "Số khách hàng THẤT BẠI: ${failedCustomers.size} (Đã thành công: ${session.completedCustomers.size})")
             
-            // Nếu phiên thất bại, đảm bảo khách hàng thất bại được đưa vào danh sách
-            if (session.status == "Thất bại" && session.failedCustomerId.isNotEmpty()) {
-                val failedCustomer = uniqueCustomers.find { it.id == session.failedCustomerId }
-                
-                if (failedCustomer == null) {
-                    Log.d(TAG, "Phiên thất bại nhưng không tìm thấy khách hàng thất bại ID: ${session.failedCustomerId}")
-                } else {
-                    Log.d(TAG, "Phiên thất bại, đã bao gồm khách hàng thất bại: ${failedCustomer.name}")
-                }
-            }
-            
-            Log.d(TAG, "Khôi phục ${uniqueCustomers.size} khách hàng từ phiên ${session.status}")
-            return uniqueCustomers
+            Log.d(TAG, "✅ Khôi phục ${failedCustomers.size} khách hàng THẤT BẠI từ phiên ${session.status}")
+            return failedCustomers
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi khi khôi phục khách hàng từ session: ${e.message}", e)
             return emptyList()

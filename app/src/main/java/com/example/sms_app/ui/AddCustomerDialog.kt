@@ -222,15 +222,15 @@ fun AddCustomerDialog(
                             if (formattedPhoneNumber.isValidPhoneNumber()) {
                                 val customer = Customer(
                                     id = UUID.randomUUID().toString(),
-                                    name = name,
-                                    idNumber = idNumber,
+                                    name = name.trim(),
+                                    idNumber = idNumber.trim(),
                                     phoneNumber = formattedPhoneNumber,
-                                    address = address,
-                                    option1 = option1,
-                                    option2 = option2,
-                                    option3 = option3,
-                                    option4 = option4,
-                                    option5 = option5,
+                                    address = address.trim(),
+                                    option1 = option1.trim(),
+                                    option2 = option2.trim(),
+                                    option3 = option3.trim(),
+                                    option4 = option4.trim(),
+                                    option5 = option5.trim(),
                                     templateNumber = templateNumber.toIntOrNull() ?: 1
                                 )
                                 onSave(customer)

@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
@@ -17,7 +18,6 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.BottomAppBar
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -39,7 +39,8 @@ import androidx.compose.ui.text.capitalize
 import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.sms_app.MainActivity.SmsProgress
+import com.example.sms_app.data.SmsProgress
+import com.example.sms_app.data.Customer
 import com.example.sms_app.data.MessageTemplate
 import com.example.sms_app.presentation.viewmodel.SendMessageViewModel
 import com.example.sms_app.utils.SimInfo
@@ -64,10 +65,16 @@ enum class BottomButton(val icon: ImageVector) {
 @Composable
 fun MyBottomBar(
     providers: List<String>,
+    customers: List<Customer> = emptyList(),
     sendMessageViewModel: SendMessageViewModel = hiltViewModel(),
     onBottomButton: ((BottomButton) -> Unit),
     onProviderSelected: ((String) -> Unit) = {},
-    onCustomerAdded: (() -> Unit) = {}
+    onCustomerAdded: (() -> Unit) = {},
+    onRemoveDuplicates: (() -> Unit) = {},
+    onRestoreUnsentCustomers: (() -> Unit) = {},
+    onUpdateClick: (() -> Unit) = {},
+    onHomeClick: (() -> Unit) = {},
+    onSupportClick: (() -> Unit) = {}
 ) {
     var button by remember {
         mutableStateOf(BottomButton.None)
@@ -121,9 +128,17 @@ fun MyBottomBar(
                                 Icon(x.icon, contentDescription = null)
                             }
                             if (button == BottomButton.MoreVert && x == BottomButton.MoreVert) {
-                                MoreView(button) {
-                                    button = BottomButton.None
-                                }
+                                MoreView(
+                                    button = button,
+                                    onDismissRequest = {
+                                        button = BottomButton.None
+                                    },
+                                    onRemoveDuplicates = onRemoveDuplicates,
+                                    onRestoreUnsentCustomers = onRestoreUnsentCustomers,
+                                    onUpdateClick = onUpdateClick,
+                                    onHomeClick = onHomeClick,
+                                    onSupportClick = onSupportClick
+                                )
                             }
                         }
                     }
@@ -137,6 +152,15 @@ fun MyBottomBar(
                 var selectedProvider by remember {
                     mutableStateOf("all")
                 }
+                
+                // Calculate customer counts for each carrier
+                val totalCustomers = customers.size
+                val carrierCounts = providers.associateWith { provider ->
+                    customers.count { customer ->
+                        customer.carrier.lowercase() == provider.lowercase()
+                    }
+                }
+                
                 Text("Lọc theo nhà mạng")
                 Row(
                     Modifier
@@ -151,19 +175,20 @@ fun MyBottomBar(
                                 onProviderSelected("all")
                             }
                         )
-                        Text("Tất cả")
+                        Text("Tất cả ($totalCustomers)")
                     }
 
                     providers.forEach { provider ->
+                        val count = carrierCounts[provider] ?: 0
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(
                                 selected = selectedProvider == provider,
-                                onClick = { 
+                                onClick = {
                                     selectedProvider = provider
                                     onProviderSelected(provider)
                                 }
                             )
-                            Text(provider.capitalize(Locale.current))
+                            Text("${provider.capitalize(Locale.current)} ($count)")
                         }
                     }
                 }
@@ -232,12 +257,37 @@ fun MyBottomBar(
         BottomButton.MoreVert -> {}
         BottomButton.None -> {}
         BottomButton.SendMessage -> {
-            SendMessageDialog(
-                messageTemplate,
-                simInfo,
-                sendMessageViewModel
-            ) {
+            // Debug: Hiển thị tất cả khách hàng được pass vào MyBottomBar
+            android.util.Log.d("MyBottomBar", "🔍 ALL customers passed to MyBottomBar: ${customers.size}")
+            customers.forEachIndexed { index, customer ->
+                android.util.Log.d("MyBottomBar", "   $index. ${customer.name} (${customer.phoneNumber}) - isSelected: ${customer.isSelected}")
+            }
+            
+            // Kiểm tra số khách hàng được chọn
+            val selectedCustomers = customers.filter { it.isSelected }
+            android.util.Log.d("MyBottomBar", "🔍 Selected customers before SendMessageDialog: ${selectedCustomers.size}")
+            selectedCustomers.forEach { customer ->
+                android.util.Log.d("MyBottomBar", "✅ Selected: ${customer.name} (${customer.phoneNumber})")
+            }
+            
+            if (selectedCustomers.isEmpty()) {
+                android.util.Log.w("MyBottomBar", "❌ No customers selected")
+                Toast.makeText(context, "❌ Vui lòng chọn ít nhất một khách hàng", Toast.LENGTH_SHORT).show()
                 button = BottomButton.None
+            } else if (messageTemplate.content.isBlank()) {
+                android.util.Log.w("MyBottomBar", "❌ Message template is empty")
+                Toast.makeText(context, "❌ Vui lòng cấu hình mẫu tin nhắn trước khi gửi!", Toast.LENGTH_LONG).show()
+                button = BottomButton.None
+            } else {
+                android.util.Log.d("MyBottomBar", "🚀 Opening SendMessageDialog with ${selectedCustomers.size} selected customers")
+                android.util.Log.d("MyBottomBar", "📝 Message template: ${messageTemplate.content.take(50)}...")
+                SendMessageDialog(
+                    messageTemplate,
+                    simInfo,
+                    sendMessageViewModel
+                ) {
+                    button = BottomButton.None
+                }
             }
         }
 

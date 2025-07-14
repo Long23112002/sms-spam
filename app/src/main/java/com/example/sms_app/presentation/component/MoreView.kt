@@ -16,24 +16,35 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import kotlin.system.exitProcess
 
 enum class MoreVertFunctions(val icon: ImageVector, val text: String) {
     Home(Icons.Filled.Home, "Trang chủ"),
     Support(Icons.Filled.Call, "Hỗ trợ"),
     Filter(Icons.Filled.FilterAlt, "Xóa lặp"),
-    Random(Icons.Filled.ChangeCircle, "Ngẫu nhiên"),
     Previous(Icons.Filled.SettingsBackupRestore, "Phiên trước"),
     Update(Icons.Filled.CloudDownload, "Cập nhật"),
-    Info(Icons.Filled.Info, "Thông tin"),
     Out(Icons.AutoMirrored.Filled.ExitToApp, "Thoát"),
 }
 
 @Composable
-fun MoreView(button: BottomButton, onDismissRequest: () -> Unit) {
+fun MoreView(
+    button: BottomButton,
+    onDismissRequest: () -> Unit,
+    onRemoveDuplicates: () -> Unit = {},
+    onRestoreUnsentCustomers: () -> Unit = {},
+    onUpdateClick: () -> Unit = {},
+    onHomeClick: () -> Unit = {},
+    onSupportClick: () -> Unit = {}
+) {
     DropdownMenu(
-        button == BottomButton.MoreVert,
+        expanded = button == BottomButton.MoreVert,
         onDismissRequest = onDismissRequest,
+        modifier = Modifier
+            .widthIn(min = 200.dp)
     ) {
         MoreVertFunctions.entries.forEach {
             DropdownMenuItem(
@@ -45,16 +56,33 @@ fun MoreView(button: BottomButton, onDismissRequest: () -> Unit) {
                 },
                 onClick = {
                     when (it) {
-                        MoreVertFunctions.Home -> {}
-                        MoreVertFunctions.Support -> {}
-                        MoreVertFunctions.Filter -> {}
-                        MoreVertFunctions.Random -> {}
-                        MoreVertFunctions.Previous -> {}
-                        MoreVertFunctions.Update -> {}
-                        MoreVertFunctions.Info -> {}
-                        MoreVertFunctions.Out -> {
-                            exitProcess(0)
+                        MoreVertFunctions.Home -> {
+                            onHomeClick()
+                            onDismissRequest()
                         }
+                        MoreVertFunctions.Support -> {
+                            onSupportClick()
+                            onDismissRequest()
+                        }
+                        MoreVertFunctions.Filter -> {
+                            onRemoveDuplicates()
+                            onDismissRequest()
+                        }
+//                        MoreVertFunctions.Random -> {}
+//                        MoreVertFunctions.Previous -> {
+//                            onRestoreUnsentCustomers()
+//                            onDismissRequest()
+//                        }
+                        MoreVertFunctions.Update -> {
+                            onUpdateClick()
+                            onDismissRequest()
+                        }
+//                        MoreVertFunctions.Info -> {}
+//                        MoreVertFunctions.Out -> {
+//                            exitProcess(0)
+//                        }
+                        MoreVertFunctions.Previous -> TODO()
+                        MoreVertFunctions.Out -> TODO()
                     }
                 }
             )

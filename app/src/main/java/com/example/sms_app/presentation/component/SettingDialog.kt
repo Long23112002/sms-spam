@@ -1,5 +1,6 @@
 package com.example.sms_app.presentation.component
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -18,6 +19,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -31,9 +33,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.sms_app.BuildConfig
 import com.example.sms_app.data.AppSettings
@@ -47,7 +51,7 @@ enum class SwitchSetting(val text: String, val default: Boolean) {
     Audio("Âm báo khi gửi", true),
     FilterHead("Lọc số nhà mạng ảo", false),
     Random("Gửi ngẫu nhiên", false),
-    Limit("Gới hạn số khách hàng", false),
+    Limit("Giới hạn số khách hàng", false),
     Update("Cập nhật", true);
 
     fun getValue(appSettings: AppSettings?): Boolean = when (this) {
@@ -62,7 +66,8 @@ enum class SwitchSetting(val text: String, val default: Boolean) {
 
 enum class NumSetting(val text: String, val default: Int) {
     Delay("Thời gian chờ", 25),
-    Limit("Giới hạn thất bại liên tiếp", 10);
+    Limit("Giới hạn thất bại liên tiếp", 10),
+    CustomerLimit("Số lượng khách hàng tối đa", 20);
 
     fun getValue(appSettings: AppSettings?): String = when (this) {
         Delay -> {
@@ -73,17 +78,20 @@ enum class NumSetting(val text: String, val default: Int) {
         Limit -> {
             appSettings?.maxRetryAttempts?.toString() ?: default.toString()
         }
+        
+        CustomerLimit -> {
+            appSettings?.customerLimit?.toString() ?: default.toString()
+        }
     }
 }
 
 enum class TextSetting(val text: String, val default: String) {
     Activation(
         "Mã kích hoạt",
-        "Hết hạn ngày ${SimpleDateFormat("dd-MM-yyyy HH:mm:ss", Locale("vi")).format(Date())}"
+        "Trịnh Thị Bình An"
     ),
     Permission("Quản lý quyền", "Quyền, Dữ liệu, Thông báo"),
     Info("Thông tin phiên bản", "v${BuildConfig.VERSION_NAME}-${BuildConfig.APP_SIGNATURE}"),
-    Others("Ứng dụng khác của team", "Xem thêm Ứng dụng khác của team"),
     History(
         "Lịch sử tin nhắn trong ngày",
         "Không có dữ liệu ${SimpleDateFormat("dd-MM-yyyy", Locale("vi")).format(Date())}"
@@ -97,6 +105,7 @@ fun SettingDialog(
     onDismissRequest: () -> Unit
 ) {
     val appSettings = settingViewModel.appSettings.observeAsState().value
+    val context = LocalContext.current
     var setting by remember {
         mutableStateOf("")
     }
@@ -135,25 +144,75 @@ fun SettingDialog(
                     }
                     items(SwitchSetting.entries.size) { index: Int ->
                         val item = SwitchSetting.entries[index]
-                        var check by remember {
-                            mutableStateOf(false)
+                        var check by remember(appSettings) {
+                            mutableStateOf(item.getValue(appSettings))
                         }
-                        ListItem(
-                            headlineContent = {
-                                Text(item.text)
-                            },
-                            supportingContent = {
-                                Text(if (item.getValue(appSettings)) "Bật" else "Tắt")
-                            },
-                            trailingContent = {
-                                Switch(
-                                    check, onCheckedChange = {
-                                        check = it
-                                        settingViewModel.saveBool(item, it)
+                        var showLimitInput by remember(appSettings) {
+                            mutableStateOf(item == SwitchSetting.Limit && item.getValue(appSettings))
+                        }
+                        var limitValue by remember(appSettings) {
+                            mutableStateOf(appSettings?.customerLimit?.toString() ?: "20")
+                        }
+                        
+                        Column {
+                            ListItem(
+                                headlineContent = {
+                                    Text(item.text)
+                                },
+                                supportingContent = {
+                                    Text(if (check) "Bật" else "Tắt")
+                                },
+                                trailingContent = {
+                                    Switch(
+                                        check, onCheckedChange = {
+                                            check = it
+                                            settingViewModel.saveBool(item, it)
+                                            if (item == SwitchSetting.Limit) {
+                                                showLimitInput = it
+                                            }
+                                        }
+                                    )
+                                }
+                            )
+                            
+                            // Hiển thị input khi toggle "Giới hạn số khách hàng" được bật
+                            if (item == SwitchSetting.Limit && check) {
+                                OutlinedTextField(
+                                    value = limitValue,
+                                    onValueChange = { limitValue = it },
+                                    label = { Text("Số lượng tối đa") },
+                                    placeholder = { Text("Nhập số (ví dụ: 20)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    singleLine = true,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    trailingIcon = {
+                                        TextButton(
+                                            onClick = {
+                                                val number = limitValue.toIntOrNull()
+                                                if (number != null && number > 0) {
+                                                    settingViewModel.saveNumber(NumSetting.CustomerLimit, number)
+                                                    android.widget.Toast.makeText(
+                                                        context,
+                                                        "Đã lưu giới hạn: $number khách hàng",
+                                                        android.widget.Toast.LENGTH_SHORT
+                                                    ).show()
+                                                } else {
+                                                    android.widget.Toast.makeText(
+                                                        context,
+                                                        "Vui lòng nhập số hợp lệ (> 0)",
+                                                        android.widget.Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            }
+                                        ) {
+                                            Text("Lưu")
+                                        }
                                     }
                                 )
                             }
-                        )
+                        }
                         HorizontalDivider()
                     }
 
@@ -210,6 +269,9 @@ fun SettingDialog(
                 when (item) {
                     NumSetting.Delay -> settingViewModel.saveDelay(it)
                     NumSetting.Limit -> settingViewModel.saveRetry(it)
+                    NumSetting.CustomerLimit -> it.toIntOrNull()?.let { number -> 
+                        settingViewModel.saveNumber(NumSetting.CustomerLimit, number)
+                    }
                 }
 
                 setting = ""

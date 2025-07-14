@@ -362,7 +362,9 @@ fun loadDynamicCode(context: Context, assetName: String): Any? {
  */
 fun getRandomDelay(baseDelay: Int): Long {
     // Không còn tạo độ trễ ngẫu nhiên, sử dụng giá trị chính xác
-    return baseDelay.toLong() * 1000
+    val delayMs = baseDelay.toLong() * 1000
+    android.util.Log.d("SmsUtils", "🔧 getRandomDelay: input=${baseDelay}s → output=${delayMs}ms")
+    return delayMs
 }
 
 fun hasRequiredPermissions(context: Context): Boolean {

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "871466950687",
+    "project_id": "shop-manager-8a6b8",
+    "storage_bucket": "shop-manager-8a6b8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:871466950687:android:4d6d266ffab2877563b52a",
+        "android_client_info": {
+          "package_name": "com.example.sms_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCEY83uBRbfCvlrTkXhdQ7TdIwB6oGgS14"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

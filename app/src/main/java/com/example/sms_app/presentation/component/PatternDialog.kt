@@ -66,7 +66,7 @@ fun PatternDialog(
                     },
                     Modifier.fillMaxWidth(),
                     label = {
-                        Text("Ký tự: ${pattern.length} | Trang: ${pattern.length / 10 + 1}")
+                        Text("Ký tự: ${pattern.length}")
                     }
                 )
                 LazyRow {

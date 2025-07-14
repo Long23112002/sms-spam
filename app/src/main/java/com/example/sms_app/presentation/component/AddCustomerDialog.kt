@@ -4,6 +4,9 @@ import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -37,6 +40,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.sms_app.presentation.viewmodel.AddCustomerViewModel
 import kotlinx.coroutines.CoroutineScope
@@ -90,8 +94,20 @@ fun AddCustomerDialog(
         }
     }
     val context = LocalContext.current
-    BasicAlertDialog(onDismissRequest = onDismissRequest) {
-        Card {
+    BasicAlertDialog(
+        onDismissRequest = onDismissRequest,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true
+        )
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.90f)
+                .fillMaxHeight(0.90f)
+                .padding(4.dp)
+        ) {
             Scaffold(
                 topBar = {
                     TopAppBar(
@@ -126,16 +142,18 @@ fun AddCustomerDialog(
                             }
                         }, Modifier.fillMaxWidth()) {
                             Text(
-                                "Lưu".uppercase(),
-                                Modifier.fillMaxWidth(),
-                                style = TextStyle(textAlign = TextAlign.Center)
+                                "Lưu".uppercase()
                             )
                         }
                     }
                 }
 
             ) { paddingValues ->
-                LazyColumn(Modifier.padding(paddingValues)) {
+                LazyColumn(
+                    modifier = Modifier.padding(paddingValues),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(16.dp)
+                ) {
                     items(CustomerField.entries.size) { index ->
                         val item = CustomerField.entries[index]
                         TextField(

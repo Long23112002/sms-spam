@@ -24,6 +24,11 @@ class SmsRepository @Inject constructor (@ApplicationContext context: Context) {
         private const val KEY_LAST_SMS_DATE = "last_sms_date"
         private const val KEY_SMS_COUNT_TODAY = "sms_count_today"
         
+        // Chaves para countdown data
+        private const val KEY_COUNTDOWN_START_TIME = "countdown_start_time"
+        private const val KEY_COUNTDOWN_TOTAL_TIME = "countdown_total_time"
+        private const val KEY_COUNTDOWN_CUSTOMER_COUNT = "countdown_customer_count"
+        
         // Formato para as chaves específicas de SIM
         private fun getLastSmsDateKey(simId: Int) = "${KEY_LAST_SMS_DATE}_sim_$simId"
         private fun getSmsCountKey(simId: Int) = "${KEY_SMS_COUNT_TODAY}_sim_$simId"
@@ -357,5 +362,34 @@ class SmsRepository @Inject constructor (@ApplicationContext context: Context) {
         android.util.Log.d("SmsRepository", "Reset SMS count for all SIMs, success: $success, default SIM count: $defaultSimCount")
         
         return success && defaultSimCount == 0
+    }
+    
+    // Countdown data methods
+    fun saveCountdownData(startTime: Long, totalTime: Long, customerCount: Int) {
+        prefs.edit {
+            putLong(KEY_COUNTDOWN_START_TIME, startTime)
+            putLong(KEY_COUNTDOWN_TOTAL_TIME, totalTime)
+            putInt(KEY_COUNTDOWN_CUSTOMER_COUNT, customerCount)
+        }
+    }
+    
+    fun getCountdownStartTime(): Long {
+        return prefs.getLong(KEY_COUNTDOWN_START_TIME, 0)
+    }
+    
+    fun getCountdownTotalTime(): Long {
+        return prefs.getLong(KEY_COUNTDOWN_TOTAL_TIME, 0)
+    }
+    
+    fun getCountdownCustomerCount(): Int {
+        return prefs.getInt(KEY_COUNTDOWN_CUSTOMER_COUNT, 0)
+    }
+    
+    fun clearCountdownData() {
+        prefs.edit {
+            remove(KEY_COUNTDOWN_START_TIME)
+            remove(KEY_COUNTDOWN_TOTAL_TIME)
+            remove(KEY_COUNTDOWN_CUSTOMER_COUNT)
+        }
     }
 } 
