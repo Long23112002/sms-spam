@@ -4,20 +4,24 @@ import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Message
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Download
+
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -33,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.capitalize
@@ -44,6 +49,7 @@ import com.example.sms_app.data.Customer
 import com.example.sms_app.data.MessageTemplate
 import com.example.sms_app.presentation.viewmodel.SendMessageViewModel
 import com.example.sms_app.utils.SimInfo
+import com.example.sms_app.utils.SimConfig
 
 
 enum class BottomButton(val icon: ImageVector) {
@@ -52,7 +58,6 @@ enum class BottomButton(val icon: ImageVector) {
     Message(Icons.AutoMirrored.Filled.Message),
 
     Setting(Icons.Default.Settings),
-    BackUp(Icons.Default.Download),
     Search(Icons.Default.Search),
     MoreVert(Icons.Default.MoreVert),
     None(Icons.Default.MoreVert),
@@ -74,7 +79,8 @@ fun MyBottomBar(
     onRestoreUnsentCustomers: (() -> Unit) = {},
     onUpdateClick: (() -> Unit) = {},
     onHomeClick: (() -> Unit) = {},
-    onSupportClick: (() -> Unit) = {}
+    onSupportClick: (() -> Unit) = {},
+    onSearchClick: (() -> Unit) = {}
 ) {
     var button by remember {
         mutableStateOf(BottomButton.None)
@@ -82,8 +88,8 @@ fun MyBottomBar(
     var messageTemplate by remember {
         mutableStateOf(MessageTemplate())
     }
-    var simInfo by remember {
-        mutableStateOf(SimInfo())
+    var simConfig by remember {
+        mutableStateOf(SimConfig())
     }
     val progress = sendMessageViewModel.progress.observeAsState(SmsProgress()).value
     val completion = sendMessageViewModel.completion.observeAsState().value
@@ -116,7 +122,7 @@ fun MyBottomBar(
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 listOf(
-                    listOf(BottomButton.Setting, BottomButton.BackUp),
+                    listOf(BottomButton.Setting),
                     listOf(BottomButton.Search, BottomButton.MoreVert),
                 ).forEach {
                     Row {
@@ -201,12 +207,31 @@ fun MyBottomBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceAround
             ) {
-                listOf(BottomButton.Add, BottomButton.Send, BottomButton.Message).forEach {
-                    IconButton(onClick = {
-                        button = it
-                        onBottomButton(it)
-                    }) {
-                        Icon(it.icon, contentDescription = null)
+                listOf(BottomButton.Add, BottomButton.Send, BottomButton.Message).forEach { buttonType ->
+                    val backgroundColor = when (buttonType) {
+                        BottomButton.Add -> Color(0xFF4CAF50) // Xanh lá
+                        BottomButton.Send -> Color(0xFF2196F3) // Xanh dương
+                        BottomButton.Message -> Color(0xFFF44336) // Đỏ
+                        else -> Color.Gray
+                    }
+
+                    Button(
+                        onClick = {
+                            button = buttonType
+                            onBottomButton(buttonType)
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = backgroundColor
+                        ),
+                        modifier = Modifier.size(56.dp),
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Icon(
+                            buttonType.icon,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
                 }
             }
@@ -226,13 +251,17 @@ fun MyBottomBar(
         }
 
         BottomButton.Send -> {
-            SelectSimDialog(onDismissRequest = {
-                button = BottomButton.None
-            }, onSend = { t, s ->
-                messageTemplate = t
-                simInfo = s
-                button = BottomButton.SendMessage
-            })
+            SelectSimDialog(
+                customers = customers,
+                onDismissRequest = {
+                    button = BottomButton.None
+                },
+                onSend = { t, s ->
+                    messageTemplate = t
+                    simConfig = s
+                    button = BottomButton.SendMessage
+                }
+            )
         }
 
         BottomButton.Message -> {
@@ -247,13 +276,12 @@ fun MyBottomBar(
             }
         }
 
-        BottomButton.BackUp -> {
-            BackUpDialog {
-                button = BottomButton.None
-            }
-        }
 
-        BottomButton.Search -> {}
+
+        BottomButton.Search -> {
+            button = BottomButton.None
+            onSearchClick()
+        }
         BottomButton.MoreVert -> {}
         BottomButton.None -> {}
         BottomButton.SendMessage -> {
@@ -272,7 +300,7 @@ fun MyBottomBar(
             
             if (selectedCustomers.isEmpty()) {
                 android.util.Log.w("MyBottomBar", "❌ No customers selected")
-                Toast.makeText(context, "❌ Vui lòng chọn ít nhất một khách hàng", Toast.LENGTH_SHORT).show()
+                // Toast.makeText(context, "❌ Vui lòng chọn ít nhất một khách hàng", Toast.LENGTH_SHORT).show()
                 button = BottomButton.None
             } else if (messageTemplate.content.isBlank()) {
                 android.util.Log.w("MyBottomBar", "❌ Message template is empty")
@@ -283,7 +311,7 @@ fun MyBottomBar(
                 android.util.Log.d("MyBottomBar", "📝 Message template: ${messageTemplate.content.take(50)}...")
                 SendMessageDialog(
                     messageTemplate,
-                    simInfo,
+                    simConfig,
                     sendMessageViewModel
                 ) {
                     button = BottomButton.None

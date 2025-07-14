@@ -400,7 +400,7 @@ class ExcelImporter(private val context: Context) {
                     option3 = option3.trim(),
                     option4 = option4.trim(),
                     option5 = option5.trim(),
-                    isSelected = true,
+                    isSelected = false,
                     carrier = determineCarrier(cleanedPhone),
                     templateNumber = templateId
                 )

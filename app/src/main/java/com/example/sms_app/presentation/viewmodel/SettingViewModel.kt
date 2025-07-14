@@ -66,11 +66,18 @@ class SettingViewModel @Inject constructor(
         sync()
     }
 
+    fun saveCustomerLimit(number: Int) = viewModelScope.launch(Dispatchers.IO) {
+        smsRepository.apply {
+            saveAppSettings(getAppSettings().copy(customerLimit = number))
+        }
+        sync()
+    }
+
     fun AppSettings.edit(setting: SwitchSetting, bool: Boolean): AppSettings = when(setting) {
-        SwitchSetting.Vibrate -> copy(enableVibrate = bool)
-        SwitchSetting.Audio -> copy(enableSound = bool)
-        SwitchSetting.FilterHead -> copy(enableFilter = bool)
-        SwitchSetting.Random -> copy(isRandomNumber = bool)
+//        SwitchSetting.Vibrate -> copy(enableVibrate = bool)
+//        SwitchSetting.Audio -> copy(enableSound = bool)
+//        SwitchSetting.FilterHead -> copy(enableFilter = bool)
+//        SwitchSetting.Random -> copy(isRandomNumber = bool)
         SwitchSetting.Limit -> copy(isLimitCustomer = bool)
         SwitchSetting.Update -> copy(enableUpdate = bool)
     }
@@ -78,7 +85,6 @@ class SettingViewModel @Inject constructor(
     fun AppSettings.edit(setting: com.example.sms_app.presentation.component.NumSetting, number: Int): AppSettings = when(setting) {
         com.example.sms_app.presentation.component.NumSetting.Delay -> copy(intervalBetweenSmsSeconds = number)
         com.example.sms_app.presentation.component.NumSetting.Limit -> copy(maxRetryAttempts = number)
-        com.example.sms_app.presentation.component.NumSetting.CustomerLimit -> copy(customerLimit = number)
     }
 
 }

@@ -18,6 +18,22 @@ data class SimInfo(
     val phoneNumber: String? = null
 )
 
+data class SimConfig(
+    val isDualSim: Boolean = false,
+    val primarySim: SimInfo = SimInfo(),
+    val secondarySim: SimInfo? = null,
+    val allSims: List<SimInfo> = listOf()
+) {
+    fun getSimForCustomer(customerIndex: Int): SimInfo {
+        return if (isDualSim && allSims.size >= 2) {
+            // Xen kẽ giữa các SIM: chẵn → SIM 1, lẻ → SIM 2
+            if (customerIndex % 2 == 0) allSims[0] else allSims[1]
+        } else {
+            primarySim
+        }
+    }
+}
+
 object SimManager {
     
     @RequiresPermission(Manifest.permission.READ_PHONE_STATE)

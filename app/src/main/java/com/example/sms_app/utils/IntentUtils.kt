@@ -40,9 +40,9 @@ object IntentUtils {
     /**
      * Mở Zalo chat với số điện thoại
      * @param context Context
-     * @param phoneNumber Số điện thoại (0383479698)
+     * @param phoneNumber Số điện thoại (0383479598)
      */
-    fun openZalo(context: Context, phoneNumber: String = "0383479698") {
+    fun openZalo(context: Context, phoneNumber: String = "0383479598") {
         try {
             // Thử mở bằng Zalo app trước
             val zaloIntent = Intent(Intent.ACTION_VIEW).apply {

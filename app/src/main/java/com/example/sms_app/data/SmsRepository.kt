@@ -278,6 +278,35 @@ class SmsRepository @Inject constructor (@ApplicationContext context: Context) {
         return prefs.getInt(KEY_SELECTED_SIM, -1) // -1 means default SIM
     }
 
+    // Dual SIM configuration
+    fun setDualSimConfig(isDualSim: Boolean, sim1Id: Int, sim2Id: Int = -1) {
+        prefs.edit()
+            .putBoolean("dual_sim_enabled", isDualSim)
+            .putInt("dual_sim_1", sim1Id)
+            .putInt("dual_sim_2", sim2Id)
+            .apply()
+    }
+
+    fun isDualSimEnabled(): Boolean {
+        return prefs.getBoolean("dual_sim_enabled", false)
+    }
+
+    fun getDualSimIds(): Pair<Int, Int> {
+        val sim1 = prefs.getInt("dual_sim_1", -1)
+        val sim2 = prefs.getInt("dual_sim_2", -1)
+        return Pair(sim1, sim2)
+    }
+
+    fun getSimForCustomer(customerIndex: Int): Int {
+        return if (isDualSimEnabled()) {
+            val (sim1, sim2) = getDualSimIds()
+            // Xen kẽ: chẵn → SIM 1, lẻ → SIM 2
+            if (customerIndex % 2 == 0) sim1 else sim2
+        } else {
+            getSelectedSim()
+        }
+    }
+
     fun setDefaultTemplate(templateId: Int) {
         prefs.edit().putInt(KEY_DEFAULT_TEMPLATE, templateId).apply()
     }

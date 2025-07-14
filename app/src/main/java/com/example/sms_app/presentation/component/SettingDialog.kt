@@ -1,15 +1,19 @@
 package com.example.sms_app.presentation.component
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.QuestionMark
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.BottomAppBar
@@ -47,18 +51,10 @@ import java.util.Date
 import java.util.Locale
 
 enum class SwitchSetting(val text: String, val default: Boolean) {
-    Vibrate("Rung khi gửi", false),
-    Audio("Âm báo khi gửi", true),
-    FilterHead("Lọc số nhà mạng ảo", false),
-    Random("Gửi ngẫu nhiên", false),
     Limit("Giới hạn số khách hàng", false),
     Update("Cập nhật", true);
 
     fun getValue(appSettings: AppSettings?): Boolean = when (this) {
-        Vibrate -> appSettings?.enableVibrate ?: default
-        Audio -> appSettings?.enableSound ?: default
-        FilterHead -> appSettings?.enableFilter ?: default
-        Random -> appSettings?.isRandomNumber ?: default
         Limit -> appSettings?.isLimitCustomer ?: default
         Update -> appSettings?.enableUpdate ?: default
     }
@@ -66,8 +62,7 @@ enum class SwitchSetting(val text: String, val default: Boolean) {
 
 enum class NumSetting(val text: String, val default: Int) {
     Delay("Thời gian chờ", 25),
-    Limit("Giới hạn thất bại liên tiếp", 10),
-    CustomerLimit("Số lượng khách hàng tối đa", 20);
+    Limit("Giới hạn thất bại liên tiếp", 10);
 
     fun getValue(appSettings: AppSettings?): String = when (this) {
         Delay -> {
@@ -77,10 +72,6 @@ enum class NumSetting(val text: String, val default: Int) {
 
         Limit -> {
             appSettings?.maxRetryAttempts?.toString() ?: default.toString()
-        }
-        
-        CustomerLimit -> {
-            appSettings?.customerLimit?.toString() ?: default.toString()
         }
     }
 }
@@ -92,10 +83,6 @@ enum class TextSetting(val text: String, val default: String) {
     ),
     Permission("Quản lý quyền", "Quyền, Dữ liệu, Thông báo"),
     Info("Thông tin phiên bản", "v${BuildConfig.VERSION_NAME}-${BuildConfig.APP_SIGNATURE}"),
-    History(
-        "Lịch sử tin nhắn trong ngày",
-        "Không có dữ liệu ${SimpleDateFormat("dd-MM-yyyy", Locale("vi")).format(Date())}"
-    ),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -110,7 +97,13 @@ fun SettingDialog(
         mutableStateOf("")
     }
     BasicAlertDialog(onDismissRequest = onDismissRequest) {
-        Card(Modifier.fillMaxSize()) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(1f)
+                .wrapContentHeight()
+                .heightIn(max = 700.dp)
+                .padding(8.dp)
+        ) {
             Scaffold(
                 topBar = {
                     TopAppBar(
@@ -147,52 +140,92 @@ fun SettingDialog(
                         var check by remember(appSettings) {
                             mutableStateOf(item.getValue(appSettings))
                         }
-                        var showLimitInput by remember(appSettings) {
-                            mutableStateOf(item == SwitchSetting.Limit && item.getValue(appSettings))
+                        var showLimitDialog by remember {
+                            mutableStateOf(false)
                         }
                         var limitValue by remember(appSettings) {
                             mutableStateOf(appSettings?.customerLimit?.toString() ?: "20")
                         }
-                        
+
                         Column {
                             ListItem(
                                 headlineContent = {
-                                    Text(item.text)
+                                    Text(
+                                        text = item.text,
+                                        modifier = if (item == SwitchSetting.Limit && check) {
+                                            Modifier.clickable {
+                                                showLimitDialog = true
+                                            }
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
                                 },
                                 supportingContent = {
-                                    Text(if (check) "Bật" else "Tắt")
+                                    Text(
+                                        text = if (item == SwitchSetting.Limit && check) {
+                                            "Bật - Giới hạn: ${appSettings?.customerLimit ?: 20} khách hàng"
+                                        } else if (check) {
+                                            "Bật"
+                                        } else {
+                                            "Tắt"
+                                        },
+                                        modifier = if (item == SwitchSetting.Limit && check) {
+                                            Modifier.clickable {
+                                                showLimitDialog = true
+                                            }
+                                        } else {
+                                            Modifier
+                                        }
+                                    )
                                 },
                                 trailingContent = {
                                     Switch(
                                         check, onCheckedChange = {
                                             check = it
                                             settingViewModel.saveBool(item, it)
-                                            if (item == SwitchSetting.Limit) {
-                                                showLimitInput = it
+                                            if (item == SwitchSetting.Limit && it) {
+                                                showLimitDialog = true
                                             }
                                         }
                                     )
                                 }
                             )
-                            
-                            // Hiển thị input khi toggle "Giới hạn số khách hàng" được bật
-                            if (item == SwitchSetting.Limit && check) {
-                                OutlinedTextField(
-                                    value = limitValue,
-                                    onValueChange = { limitValue = it },
-                                    label = { Text("Số lượng tối đa") },
-                                    placeholder = { Text("Nhập số (ví dụ: 20)") },
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                    singleLine = true,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                                    trailingIcon = {
+
+                            // Modal dialog cho nhập giới hạn số khách hàng
+                            if (item == SwitchSetting.Limit && showLimitDialog) {
+                                AlertDialog(
+                                    onDismissRequest = {
+                                        showLimitDialog = false
+                                        // Nếu user đóng dialog mà chưa nhập, tắt switch
+                                        check = false
+                                        settingViewModel.saveBool(item, false)
+                                    },
+                                    title = {
+                                        Text("Giới hạn số khách hàng")
+                                    },
+                                    text = {
+                                        Column {
+                                            Text("Nhập số lượng khách hàng tối đa:")
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            OutlinedTextField(
+                                                value = limitValue,
+                                                onValueChange = { limitValue = it },
+                                                label = { Text("Số lượng") },
+                                                placeholder = { Text("Ví dụ: 20") },
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                                singleLine = true,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                        }
+                                    },
+                                    confirmButton = {
                                         TextButton(
                                             onClick = {
                                                 val number = limitValue.toIntOrNull()
                                                 if (number != null && number > 0) {
-                                                    settingViewModel.saveNumber(NumSetting.CustomerLimit, number)
+                                                    settingViewModel.saveCustomerLimit(number)
+                                                    showLimitDialog = false
                                                     android.widget.Toast.makeText(
                                                         context,
                                                         "Đã lưu giới hạn: $number khách hàng",
@@ -208,6 +241,18 @@ fun SettingDialog(
                                             }
                                         ) {
                                             Text("Lưu")
+                                        }
+                                    },
+                                    dismissButton = {
+                                        TextButton(
+                                            onClick = {
+                                                showLimitDialog = false
+                                                // Tắt switch nếu user hủy
+                                                check = false
+                                                settingViewModel.saveBool(item, false)
+                                            }
+                                        ) {
+                                            Text("Hủy")
                                         }
                                     }
                                 )
@@ -229,7 +274,7 @@ fun SettingDialog(
                                 IconButton(onClick = {
                                     setting = item.name
                                 }) {
-                                    Icon(Icons.Default.QuestionMark, null)
+                                    Icon(Icons.Default.Edit, null)
                                 }
                             }
                         )
@@ -269,9 +314,6 @@ fun SettingDialog(
                 when (item) {
                     NumSetting.Delay -> settingViewModel.saveDelay(it)
                     NumSetting.Limit -> settingViewModel.saveRetry(it)
-                    NumSetting.CustomerLimit -> it.toIntOrNull()?.let { number -> 
-                        settingViewModel.saveNumber(NumSetting.CustomerLimit, number)
-                    }
                 }
 
                 setting = ""

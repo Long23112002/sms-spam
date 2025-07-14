@@ -21,6 +21,7 @@ import com.example.sms_app.data.SessionBackup
 import com.example.sms_app.presentation.component.formatDuration
 import com.example.sms_app.service.SmsService
 import com.example.sms_app.utils.SimInfo
+import com.example.sms_app.utils.SimConfig
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -174,7 +175,7 @@ class SendMessageViewModel @Inject constructor(
         }
     }
 
-    fun sendMessage(messageTemplate: MessageTemplate, simInfo: SimInfo) =
+    fun sendMessage(messageTemplate: MessageTemplate, simConfig: SimConfig) =
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 // Validate mẫu tin nhắn trước khi gửi
@@ -310,10 +311,33 @@ class SendMessageViewModel @Inject constructor(
                         android.util.Log.w(TAG, "⚠️ Error stopping existing service: ${e.message}")
                     }
 
-                    // Bắt đầu countdown timer với tổng thời gian
-                    startCountdownTimer(totalCustomers, settings.intervalBetweenSmsSeconds)
+                    // Lưu cấu hình SIM
+                    if (simConfig.isDualSim && simConfig.allSims.size >= 2) {
+                        android.util.Log.d(TAG, "🔄 Dual SIM mode enabled with ${simConfig.allSims.size} SIMs")
+                        smsRepository.setDualSimConfig(
+                            isDualSim = true,
+                            sim1Id = simConfig.allSims[0].subscriptionId,
+                            sim2Id = simConfig.allSims[1].subscriptionId
+                        )
+                        smsRepository.setSelectedSim(simConfig.allSims[0].subscriptionId)
 
-                    smsRepository.setSelectedSim(simInfo.subscriptionId)
+                        // Dual SIM: chỉ giảm thời gian một nửa khi có ít nhất 2 khách hàng
+                        val dualSimInterval = if (totalCustomers >= 2) {
+                            maxOf(settings.intervalBetweenSmsSeconds / 2, 1)
+                        } else {
+                            settings.intervalBetweenSmsSeconds
+                        }
+                        android.util.Log.d(TAG, "⏱️ Dual SIM countdown: ${totalCustomers} customers, ${dualSimInterval}s interval (original: ${settings.intervalBetweenSmsSeconds}s)")
+                        startCountdownTimer(totalCustomers, dualSimInterval)
+                    } else {
+                        android.util.Log.d(TAG, "📱 Single SIM mode: ${simConfig.primarySim.subscriptionId}")
+                        smsRepository.setDualSimConfig(isDualSim = false, sim1Id = simConfig.primarySim.subscriptionId)
+                        smsRepository.setSelectedSim(simConfig.primarySim.subscriptionId)
+
+                        // Single SIM: thời gian bình thường
+                        android.util.Log.d(TAG, "⏱️ Single SIM countdown: ${totalCustomers} customers, ${settings.intervalBetweenSmsSeconds}s interval")
+                        startCountdownTimer(totalCustomers, settings.intervalBetweenSmsSeconds)
+                    }
                     val intent = Intent(application, SmsService::class.java).apply {
                         putExtra(SmsService.EXTRA_TEMPLATE_ID, messageTemplate.id)
                         putExtra(SmsService.EXTRA_INTERVAL_SECONDS, settings.intervalBetweenSmsSeconds)

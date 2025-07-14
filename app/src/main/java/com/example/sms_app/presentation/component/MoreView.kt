@@ -25,7 +25,6 @@ enum class MoreVertFunctions(val icon: ImageVector, val text: String) {
     Home(Icons.Filled.Home, "Trang chủ"),
     Support(Icons.Filled.Call, "Hỗ trợ"),
     Filter(Icons.Filled.FilterAlt, "Xóa lặp"),
-    Previous(Icons.Filled.SettingsBackupRestore, "Phiên trước"),
     Update(Icons.Filled.CloudDownload, "Cập nhật"),
     Out(Icons.AutoMirrored.Filled.ExitToApp, "Thoát"),
 }
@@ -81,7 +80,7 @@ fun MoreView(
 //                        MoreVertFunctions.Out -> {
 //                            exitProcess(0)
 //                        }
-                        MoreVertFunctions.Previous -> TODO()
+//                        MoreVertFunctions.Previous -> TODO()
                         MoreVertFunctions.Out -> TODO()
                     }
                 }

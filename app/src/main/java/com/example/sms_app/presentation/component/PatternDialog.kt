@@ -99,7 +99,8 @@ fun PatternDialog(
         },
         dismissButton = {
             TextButton(onClick = {
-                onDismissRequest()
+                // Clear text trong ô mẫu đang chọn thay vì đóng modal
+                pattern = ""
             }) {
                 Text("Xóa".uppercase())
             }

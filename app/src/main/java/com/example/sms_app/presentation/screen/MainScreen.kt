@@ -3,16 +3,21 @@ package com.example.sms_app.presentation.screen
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
@@ -40,8 +45,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.sms_app.data.MessageTemplate
+
 import com.example.sms_app.presentation.component.MyBottomBar
 import com.example.sms_app.presentation.component.MyTopBar
+import com.example.sms_app.presentation.component.SearchDialog
 import com.example.sms_app.presentation.component.UpdateDialog
 import com.example.sms_app.presentation.viewmodel.MainViewModel
 import com.example.sms_app.presentation.viewmodel.UpdateViewModel
@@ -70,17 +77,24 @@ fun MainScreen(
     //     updateViewModel.checkForUpdates()
     // }
     
-    // Khởi tạo selectAll từ repository data
-    var selectAll by remember(allCustomers) {
-        val shouldSelectAll = allCustomers.isNotEmpty() && allCustomers.all { it.isSelected }
-        android.util.Log.d("MainScreen", "🔄 Initializing selectAll: $shouldSelectAll (${allCustomers.size} customers)")
-        allCustomers.forEach { customer ->
-            android.util.Log.d("MainScreen", "   Customer: ${customer.name} - isSelected: ${customer.isSelected}")
-        }
-        mutableStateOf(shouldSelectAll)
-    }
     var selectedProvider by remember {
         mutableStateOf("all")
+    }
+
+    // Khởi tạo selectAll từ repository data dựa trên provider được chọn
+    var selectAll by remember(allCustomers, selectedProvider) {
+        val filteredCustomers = if (selectedProvider == "all") {
+            allCustomers
+        } else {
+            allCustomers.filter { customer ->
+                customer.carrier.lowercase() == selectedProvider.lowercase()
+            }
+        }
+
+        val shouldSelectAll = filteredCustomers.isNotEmpty() && filteredCustomers.all { it.isSelected }
+        android.util.Log.d("MainScreen", "🔄 Initializing selectAll: $shouldSelectAll for provider: $selectedProvider (${filteredCustomers.size} filtered customers)")
+
+        mutableStateOf(shouldSelectAll)
     }
     var customerToDelete by remember {
         mutableStateOf<com.example.sms_app.data.Customer?>(null)
@@ -91,6 +105,10 @@ fun MainScreen(
     var selectedCustomerForPreview by remember {
         mutableStateOf<com.example.sms_app.data.Customer?>(null)
     }
+    var showSearchDialog by remember {
+        mutableStateOf(false)
+    }
+
     val context = LocalContext.current
     
     // Filter customers based on selected provider
@@ -116,6 +134,8 @@ fun MainScreen(
         }
     }
 
+
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
@@ -126,22 +146,17 @@ fun MainScreen(
                     selectAll = false // Reset selectAll khi xóa tất cả
                 },
                 onUpload = {
-                    Toast.makeText(
-                        context,
-                        "Hỗ trợ cả định dạng Excel .xls và .xlsx",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    importLauncher.launch(arrayOf("*/*"))
+                    importLauncher.launch(arrayOf("application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 }
             ) { isChecked ->
                 android.util.Log.d("MainScreen", "🔄 SelectAll checkbox changed: $isChecked")
                 selectAll = isChecked
                 if (isChecked) {
-                    android.util.Log.d("MainScreen", "✅ Calling selectAll()")
-                    mainViewModel.selectAll()
+                    android.util.Log.d("MainScreen", "✅ Calling selectAll() for provider: $selectedProvider")
+                    mainViewModel.selectAll(selectedProvider)
                 } else {
-                    android.util.Log.d("MainScreen", "❌ Calling unselectAll()")
-                    mainViewModel.unselectAll()
+                    android.util.Log.d("MainScreen", "❌ Calling unselectAll() for provider: $selectedProvider")
+                    mainViewModel.unselectAll(selectedProvider)
                 }
             }
         },
@@ -192,6 +207,9 @@ fun MainScreen(
                 },
                 onSupportClick = {
                     IntentUtils.openZalo(context)
+                },
+                onSearchClick = {
+                    showSearchDialog = true
                 }
             )
         }
@@ -235,14 +253,72 @@ fun MainScreen(
 
                 item {
                     if (customers.isEmpty()) {
-                        Column(
-                            Modifier
-                                .fillMaxSize(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(64.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Close, contentDescription = null)
-                            Text("Không có khách hàng")
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                // Icon với background tròn màu xanh nhạt
+                                Box(
+                                    modifier = Modifier
+                                        .size(80.dp)
+                                        .padding(bottom = 16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    // Background tròn màu xanh nhạt
+                                    androidx.compose.foundation.Canvas(
+                                        modifier = Modifier.size(80.dp)
+                                    ) {
+                                        drawCircle(
+                                            color = androidx.compose.ui.graphics.Color(0xFFE3F2FD),
+                                            radius = size.minDimension / 2
+                                        )
+                                    }
+
+                                    // Icon người dùng
+                                    Icon(
+                                        imageVector = androidx.compose.material.icons.Icons.Default.Person,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(40.dp),
+                                        tint = androidx.compose.ui.graphics.Color(0xFF2196F3)
+                                    )
+
+                                    // Dấu X nhỏ ở góc
+                                    Box(
+                                        modifier = Modifier
+                                            .size(24.dp)
+                                            .offset(x = 20.dp, y = (-20).dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        androidx.compose.foundation.Canvas(
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            drawCircle(
+                                                color = androidx.compose.ui.graphics.Color(0xFF4CAF50),
+                                                radius = size.minDimension / 2
+                                            )
+                                        }
+
+                                        Icon(
+                                            imageVector = androidx.compose.material.icons.Icons.Default.Close,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp),
+                                            tint = androidx.compose.ui.graphics.Color.White
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    text = "Không có dữ liệu",
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodyLarge,
+                                    color = androidx.compose.ui.graphics.Color.Gray
+                                )
+                            }
                         }
                     }
                 }
@@ -388,4 +464,16 @@ fun MainScreen(
             }
         )
     }
+
+    // Search Dialog
+    if (showSearchDialog) {
+        SearchDialog(
+            onDismiss = { showSearchDialog = false },
+            onSearch = { query ->
+                mainViewModel.searchCustomers(query)
+            }
+        )
+    }
+
+
 }

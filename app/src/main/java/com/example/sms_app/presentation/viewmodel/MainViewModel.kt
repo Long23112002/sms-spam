@@ -79,14 +79,25 @@ class MainViewModel @Inject constructor(
     }
 
     fun deleteAll() = viewModelScope.launch(Dispatchers.IO) {
-        smsRepository.saveCustomers(listOf())
-        android.util.Log.d("MainViewModel", "✅ Deleted all customers")
+        // Lấy danh sách khách hàng hiện tại
+        val currentCustomers = smsRepository.getCustomers()
 
-        // Xóa session backup và countdown data khi xóa tất cả khách hàng
-        val sessionBackup = com.example.sms_app.data.SessionBackup(getApplication())
-        sessionBackup.clearActiveSession()
-        smsRepository.clearCountdownData()
-        android.util.Log.d("MainViewModel", "🗑️ Cleared session backup and countdown data on delete all")
+        // Chỉ giữ lại những khách hàng KHÔNG được chọn (isSelected = false)
+        val remainingCustomers = currentCustomers.filter { !it.isSelected }
+
+        android.util.Log.d("MainViewModel", "🗑️ Deleting selected customers: ${currentCustomers.size - remainingCustomers.size} customers")
+        android.util.Log.d("MainViewModel", "✅ Keeping unselected customers: ${remainingCustomers.size} customers")
+
+        // Lưu lại danh sách khách hàng còn lại
+        smsRepository.saveCustomers(remainingCustomers)
+
+        // Chỉ xóa session backup nếu xóa hết tất cả khách hàng
+        if (remainingCustomers.isEmpty()) {
+            val sessionBackup = com.example.sms_app.data.SessionBackup(getApplication())
+            sessionBackup.clearActiveSession()
+            smsRepository.clearCountdownData()
+            android.util.Log.d("MainViewModel", "🗑️ Cleared session backup and countdown data (no customers left)")
+        }
 
         sync()
     }
@@ -115,40 +126,44 @@ class MainViewModel @Inject constructor(
                     // Lấy danh sách khách hàng hiện tại
                     val currentCustomers = smsRepository.getCustomers()
                     
-                    // Merge và loại bỏ duplicate theo số điện thoại
-                    val allCustomers = (currentCustomers + importedCustomers)
-                    val uniqueCustomers = allCustomers.groupBy { it.phoneNumber }
+                    // Lọc ra những khách hàng mới không trùng với khách hàng hiện tại
+                    val existingPhoneNumbers = currentCustomers.map { it.phoneNumber }.toSet()
+                    val newCustomers = importedCustomers.filter { importedCustomer ->
+                        !existingPhoneNumbers.contains(importedCustomer.phoneNumber)
+                    }
+
+                    // Loại bỏ duplicate trong chính danh sách import (nếu có)
+                    val uniqueNewCustomers = newCustomers.groupBy { it.phoneNumber }
                         .map { (phoneNumber, duplicates) ->
                             if (duplicates.size > 1) {
-                                android.util.Log.d("MainViewModel", "📱 Found duplicates for phone: $phoneNumber, keeping the latest one")
-                                // Giữ lại customer mới nhất (từ import)
-                                duplicates.maxBy { customer ->
-                                    // Ưu tiên customer từ import (isSelected = true)
-                                    if (customer.isSelected) 1 else 0
-                                }
+                                android.util.Log.d("MainViewModel", "📱 Found duplicates in import for phone: $phoneNumber, keeping the first one")
+                                duplicates.first()
                             } else {
                                 duplicates.first()
                             }
                         }
+
+                    // Kết hợp khách hàng hiện tại với khách hàng mới
+                    val uniqueCustomers = currentCustomers + uniqueNewCustomers
                     
-                    val duplicatesRemoved = allCustomers.size - uniqueCustomers.size
-                    val actualNewCustomers = uniqueCustomers.size - currentCustomers.size
-                    
+                    val duplicatesSkipped = importedCustomers.size - uniqueNewCustomers.size
+                    val actualNewCustomers = uniqueNewCustomers.size
+
                     smsRepository.saveCustomers(uniqueCustomers)
-                    
+
                     val message = when {
-                        duplicatesRemoved > 0 && actualNewCustomers > 0 -> 
-                            "Đã nhập ${actualNewCustomers} khách hàng mới và loại bỏ ${duplicatesRemoved} khách hàng trùng lặp"
-                        duplicatesRemoved > 0 && actualNewCustomers == 0 -> 
-                            "Đã cập nhật ${duplicatesRemoved} khách hàng trùng lặp"
-                        actualNewCustomers > 0 -> 
+                        duplicatesSkipped > 0 && actualNewCustomers > 0 ->
+                            "Đã nhập ${actualNewCustomers} khách hàng mới và bỏ qua ${duplicatesSkipped} khách hàng trùng lặp"
+                        duplicatesSkipped > 0 && actualNewCustomers == 0 ->
+                            "Đã bỏ qua ${duplicatesSkipped} khách hàng trùng lặp, không có khách hàng mới"
+                        actualNewCustomers > 0 ->
                             "Đã nhập thành công ${actualNewCustomers} khách hàng từ Excel"
-                        else -> 
+                        else ->
                             "Tất cả khách hàng trong file đã tồn tại"
                     }
                     
                     onMessage(message)
-                    android.util.Log.d("MainViewModel", "📋 Import summary: Total=${uniqueCustomers.size}, New=${actualNewCustomers}, Duplicates removed=${duplicatesRemoved}")
+                    android.util.Log.d("MainViewModel", "📋 Import summary: Total=${uniqueCustomers.size}, New=${actualNewCustomers}, Duplicates skipped=${duplicatesSkipped}")
                 } else {
                     onMessage("Không tìm thấy khách hàng hợp lệ trong file Excel")
                 }
@@ -159,33 +174,43 @@ class MainViewModel @Inject constructor(
             sync()
         }
 
-    fun selectAll() = viewModelScope.launch(Dispatchers.IO) {
+    fun selectAll(selectedProvider: String = "all") = viewModelScope.launch(Dispatchers.IO) {
         val allCustomers = smsRepository.getCustomers()
-        android.util.Log.d("MainViewModel", "🎯 SelectAll called - Total customers: ${allCustomers.size}")
-        
-        val updatedCustomers = allCustomers.map { it.copy(isSelected = true) }
-        smsRepository.saveCustomers(updatedCustomers)
-        
-        android.util.Log.d("MainViewModel", "✅ Selected all ${updatedCustomers.size} customers")
-        updatedCustomers.forEach { customer ->
-            android.util.Log.d("MainViewModel", "✅ Customer: ${customer.name} - Selected: ${customer.isSelected}")
+        android.util.Log.d("MainViewModel", "🎯 SelectAll called - Provider: $selectedProvider, Total customers: ${allCustomers.size}")
+
+        val updatedCustomers = allCustomers.map { customer ->
+            if (selectedProvider == "all" || customer.carrier.lowercase() == selectedProvider.lowercase()) {
+                customer.copy(isSelected = true)
+            } else {
+                customer // Giữ nguyên trạng thái hiện tại
+            }
         }
-        
+
+        val selectedCount = updatedCustomers.count { it.isSelected }
+        smsRepository.saveCustomers(updatedCustomers)
+
+        android.util.Log.d("MainViewModel", "✅ Selected $selectedCount customers for provider: $selectedProvider")
+
         sync()
     }
     
-    fun unselectAll() = viewModelScope.launch(Dispatchers.IO) {
+    fun unselectAll(selectedProvider: String = "all") = viewModelScope.launch(Dispatchers.IO) {
         val allCustomers = smsRepository.getCustomers()
-        android.util.Log.d("MainViewModel", "🎯 UnselectAll called - Total customers: ${allCustomers.size}")
-        
-        val updatedCustomers = allCustomers.map { it.copy(isSelected = false) }
-        smsRepository.saveCustomers(updatedCustomers)
-        
-        android.util.Log.d("MainViewModel", "✅ Unselected all ${updatedCustomers.size} customers")
-        updatedCustomers.forEach { customer ->
-            android.util.Log.d("MainViewModel", "❌ Customer: ${customer.name} - Selected: ${customer.isSelected}")
+        android.util.Log.d("MainViewModel", "🎯 UnselectAll called - Provider: $selectedProvider, Total customers: ${allCustomers.size}")
+
+        val updatedCustomers = allCustomers.map { customer ->
+            if (selectedProvider == "all" || customer.carrier.lowercase() == selectedProvider.lowercase()) {
+                customer.copy(isSelected = false)
+            } else {
+                customer // Giữ nguyên trạng thái hiện tại
+            }
         }
-        
+
+        val unselectedCount = updatedCustomers.count { !it.isSelected }
+        smsRepository.saveCustomers(updatedCustomers)
+
+        android.util.Log.d("MainViewModel", "✅ Unselected customers for provider: $selectedProvider")
+
         sync()
     }
 
@@ -250,5 +275,41 @@ class MainViewModel @Inject constructor(
             smsRepository.saveCustomers(uniqueCustomers)
             sync()
         }
+    }
+
+    // Hàm tìm kiếm khách hàng
+    fun searchCustomers(query: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val allCustomers = smsRepository.getCustomers()
+
+                if (query.isBlank()) {
+                    // Nếu không có từ khóa, hiển thị tất cả
+                    _customers.postValue(allCustomers)
+                    android.util.Log.d("MainViewModel", "🔍 Search cleared, showing all ${allCustomers.size} customers")
+                } else {
+                    // Tìm kiếm theo tên hoặc số điện thoại
+                    val filteredCustomers = allCustomers.filter { customer ->
+                        customer.name.contains(query, ignoreCase = true) ||
+                        customer.phoneNumber.contains(query, ignoreCase = true)
+                    }
+
+                    _customers.postValue(filteredCustomers)
+                    android.util.Log.d("MainViewModel", "🔍 Search '$query': found ${filteredCustomers.size}/${allCustomers.size} customers")
+
+                    // Log kết quả tìm kiếm
+                    filteredCustomers.forEach { customer ->
+                        android.util.Log.d("MainViewModel", "   Found: ${customer.name} (${customer.phoneNumber})")
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("MainViewModel", "❌ Error searching customers", e)
+            }
+        }
+    }
+
+    // Hàm reset về hiển thị tất cả khách hàng
+    fun clearSearch() {
+        searchCustomers("")
     }
 }

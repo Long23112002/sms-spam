@@ -3,12 +3,14 @@ package com.example.sms_app.presentation.component
 import android.annotation.SuppressLint
 import android.os.CountDownTimer
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -36,6 +38,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -46,13 +50,14 @@ import com.example.sms_app.presentation.viewmodel.PatternViewModel
 import com.example.sms_app.presentation.viewmodel.SendMessageViewModel
 import com.example.sms_app.presentation.viewmodel.SettingViewModel
 import com.example.sms_app.utils.SimInfo
+import com.example.sms_app.utils.SimConfig
 import com.example.sms_app.utils.SimManager
 
 @SuppressLint("MissingPermission")
 @Composable
 fun SendMessageDialog(
     messageTemplate: MessageTemplate,
-    simInfo: SimInfo,
+    simConfig: SimConfig,
     sendMessageViewModel: SendMessageViewModel,
     onDismissRequest: () -> Unit
 ) {
@@ -71,9 +76,12 @@ fun SendMessageDialog(
 
     // Debug logging
     LaunchedEffect(millisUntilFinished) {
-        android.util.Log.d("SendMessageDialog", "🔄 Countdown update: ${millisUntilFinished}ms (${millisUntilFinished/1000}s)")
+        android.util.Log.d(
+            "SendMessageDialog",
+            "🔄 Countdown update: ${millisUntilFinished}ms (${millisUntilFinished / 1000}s)"
+        )
     }
-    
+
     // Giữ màn hình sáng khi đang countdown/gửi SMS
     LaunchedEffect(isSending, millisUntilFinished) {
         if (isSending && millisUntilFinished > 0) {
@@ -96,7 +104,7 @@ fun SendMessageDialog(
     } catch (e: Exception) {
         listOf(0L, 0L, 0L, 0L)
     }
-    
+
     time.apply {
         clear()
         addAll(formattedTime)
@@ -104,6 +112,21 @@ fun SendMessageDialog(
 
     LaunchedEffect(Unit) {
         android.util.Log.d("SendMessageDialog", "🚀 Dialog launched")
+
+        // Debug SIM config
+        android.util.Log.d("SendMessageDialog", "📱 SIM Config: isDualSim=${simConfig.isDualSim}")
+        android.util.Log.d(
+            "SendMessageDialog",
+            "📱 Primary SIM: ${simConfig.primarySim.displayName} (slot ${simConfig.primarySim.simSlotIndex}, id ${simConfig.primarySim.subscriptionId})"
+        )
+        if (simConfig.isDualSim) {
+            simConfig.allSims.forEachIndexed { index, sim ->
+                android.util.Log.d(
+                    "SendMessageDialog",
+                    "📱 SIM $index: ${sim.displayName} (slot ${sim.simSlotIndex}, id ${sim.subscriptionId})"
+                )
+            }
+        }
 
         // Validate mẫu tin nhắn trước khi gửi
         if (messageTemplate.content.isBlank()) {
@@ -118,10 +141,13 @@ fun SendMessageDialog(
             return@LaunchedEffect
         }
 
-        android.util.Log.d("SendMessageDialog", "✅ Message template validated, starting sendMessage")
-        sendMessageViewModel.sendMessage(messageTemplate, simInfo)
+        android.util.Log.d(
+            "SendMessageDialog",
+            "✅ Message template validated, starting sendMessage"
+        )
+        sendMessageViewModel.sendMessage(messageTemplate, simConfig)
     }
-    
+
     // Auto-close modal khi hoàn thành
     LaunchedEffect(completion) {
         completion?.let {
@@ -136,10 +162,13 @@ fun SendMessageDialog(
         }
     }
     AlertDialog(
-        onDismissRequest = { 
+        onDismissRequest = {
             // Ngăn đóng dialog bằng cách touch outside khi đang gửi SMS
             if (isSending && millisUntilFinished > 0 && completion == null) {
-                android.util.Log.d("SendMessageDialog", "⚠️ Prevented dialog dismissal during SMS sending")
+                android.util.Log.d(
+                    "SendMessageDialog",
+                    "⚠️ Prevented dialog dismissal during SMS sending"
+                )
                 // Hiển thị cảnh báo
                 android.widget.Toast.makeText(
                     context,
@@ -150,7 +179,10 @@ fun SendMessageDialog(
                 // Tắt keep screen on khi đóng dialog
                 if (context is android.app.Activity) {
                     context.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                    android.util.Log.d("SendMessageDialog", "💡 Cleared keep screen on flag on dismiss")
+                    android.util.Log.d(
+                        "SendMessageDialog",
+                        "💡 Cleared keep screen on flag on dismiss"
+                    )
                 }
                 onDismissRequest()
             }
@@ -173,13 +205,13 @@ fun SendMessageDialog(
                 val titleText = if (completion != null) {
                     "✅ Hoàn thành gửi SMS"
                 } else if (isSending && millisUntilFinished > 0) {
-                    "🚀 Đang gửi tin nhắn..."
+                    "Đang gửi tin nhắn..."
                 } else {
-                    "⏳ Đang chuẩn bị gửi SMS..."
+                    " Đang chuẩn bị gửi SMS..."
                 }
-                
+
                 Text(titleText)
-                
+
                 // Hiển thị progress tracking (1/10 người)
                 if (progress.total > 0) {
                     Text(
@@ -188,23 +220,8 @@ fun SendMessageDialog(
                         color = if (completion != null) Color.Green else Color.Blue
                     )
                 }
-                
-                if (millisUntilFinished > 0) {
-                    val timeText = try {
-                        val totalSeconds = millisUntilFinished / 1000
-                        val totalMinutes = totalSeconds / 60
-                        val displaySeconds = totalSeconds % 60
-                        "⏰ Thời gian còn lại: ${totalMinutes}:${displaySeconds.toString().padStart(2, '0')}"
-                    } catch (e: Exception) {
-                        "⏳ Đang gửi tin nhắn..."
-                    }
-                    
-                    Text(
-                        text = timeText,
-                        fontSize = 12.sp,
-                        color = Color.Gray
-                    )
-                } else if (millisUntilFinished == 0L && !isSending && completion == null && progress.total > 0) {
+
+                if (millisUntilFinished == 0L && !isSending && completion == null && progress.total > 0) {
                     Text(
                         text = "⏳ Đang chờ xác nhận hoàn thành...",
                         fontSize = 12.sp,
@@ -215,56 +232,93 @@ fun SendMessageDialog(
         },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                // Thêm cảnh báo khi đang gửi SMS
-                if (isSending && millisUntilFinished > 0) {
-                    Box(
-                        Modifier
-                            .background(Color.Red.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp))
-                            .padding(12.dp)
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                text = "⚠️ CẢNH BÁO ⚠️",
-                                color = Color.Red,
-                                fontSize = 14.sp,
-                                modifier = Modifier.padding(bottom = 4.dp)
-                            )
-                            Text(
-                                text = "Vui lòng KHÔNG thoát ra ngoài khi app đang gửi tin nhắn",
-                                color = Color.Red,
-                                fontSize = 12.sp,
-                                modifier = Modifier.padding(bottom = 4.dp)
-                            )
-                            Text(
-                                text = "Thoát ra sẽ dừng quá trình gửi SMS!",
-                                color = Color.Red,
-                                fontSize = 11.sp
-                            )
+                // SIM info với màu xanh dương
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.SimCard,
+                        contentDescription = null,
+                        tint = Color(0xFF2196F3) // Màu xanh dương
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    if (simConfig.isDualSim) {
+                        Text(
+                            "DUAL",
+                            color = Color(0xFF2196F3),
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        // Hiển thị SIM dựa trên carrier name
+                        val simText = when {
+                            simConfig.primarySim.carrierName.contains(
+                                "Viettel",
+                                ignoreCase = true
+                            ) -> "SIM ${simConfig.primarySim.simSlotIndex + 1} - VIETTEL"
+
+                            simConfig.primarySim.carrierName.contains(
+                                "Vinaphone",
+                                ignoreCase = true
+                            ) -> "SIM ${simConfig.primarySim.simSlotIndex + 1} - VINAPHONE"
+
+                            simConfig.primarySim.carrierName.contains(
+                                "Mobifone",
+                                ignoreCase = true
+                            ) -> "SIM ${simConfig.primarySim.simSlotIndex + 1} - MOBIFONE"
+
+                            else -> "SIM ${simConfig.primarySim.simSlotIndex + 1}"
                         }
+                        Text(
+                            simText,
+                            color = Color(0xFF2196F3),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
-                    Spacer(Modifier.height(12.dp))
                 }
-                
-                Row {
-                    Icon(Icons.Default.SimCard, null)
-                    Text("sim ${simInfo.simSlotIndex + 1}".uppercase())
-                }
-                Spacer(Modifier.height(10.dp))
-                Row {
+
+                Spacer(Modifier.height(8.dp))
+
+                // Row chứa NORMAL và Mẫu tin
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // NORMAL với màu xanh lá
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Cake, null)
-                        Text("Normal".uppercase())
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF4CAF50), // Màu xanh lá
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "NORMAL",
+                            color = Color(0xFF4CAF50),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
                     }
-                    Spacer(Modifier.width(10.dp))
+
+                    // Mẫu tin với màu hồng
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.AutoMirrored.Filled.Message, null)
-                        Text("mẫu tin ${messageTemplate.id}".uppercase())
+//                        Icon(
+//                            Icons.AutoMirrored.Filled.Message,
+//                            contentDescription = null,
+//                            tint = Color(0xFFE91E63), // Màu hồng
+//                            modifier = Modifier.size(16.dp)
+//                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            "Mẫu tin ${messageTemplate.id}",
+                            color = Color(0xFFE91E63),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
                     }
                 }
                 Spacer(Modifier.height(10.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(10.dp))
-                
+
                 // Hiển thị progress message từ SmsService
                 if (progress.message.isNotEmpty()) {
                     Text(
@@ -275,7 +329,7 @@ fun SendMessageDialog(
                     )
                     Spacer(Modifier.height(8.dp))
                 }
-                
+
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         text = "Thời gian chi tiết:",
@@ -289,7 +343,10 @@ fun SendMessageDialog(
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Box(
                                         Modifier
-                                            .background(Color.Black, shape = RoundedCornerShape(8.dp)),
+                                            .background(
+                                                Color.Black,
+                                                shape = RoundedCornerShape(8.dp)
+                                            ),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
@@ -304,7 +361,7 @@ fun SendMessageDialog(
                                         modifier = Modifier.padding(top = 4.dp)
                                     )
                                 }
-                                
+
                                 if (id < time.size - 1) {
                                     Text(":", modifier = Modifier.padding(horizontal = 8.dp))
                                 }
@@ -315,12 +372,12 @@ fun SendMessageDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { 
+            TextButton(onClick = {
                 // Tắt keep screen on khi đóng dialog
                 if (context is android.app.Activity) {
                     context.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
-                onDismissRequest() 
+                onDismissRequest()
             }) {
                 Text("Đóng")
             }
@@ -330,19 +387,19 @@ fun SendMessageDialog(
             if (isSending && completion == null) {
                 TextButton(onClick = {
                     android.util.Log.d("SendMessageDialog", "⛔ User clicked stop button")
-                    
+
                     // Hiển thị cảnh báo
                     android.widget.Toast.makeText(
                         context,
                         "⚠️ Đã dừng quá trình gửi SMS!",
                         android.widget.Toast.LENGTH_LONG
                     ).show()
-                    
+
                     // Tắt keep screen on
                     if (context is android.app.Activity) {
                         context.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                     }
-                    
+
                     sendMessageViewModel.stop()
                     onDismissRequest()
                 }) {
