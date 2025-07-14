@@ -420,13 +420,16 @@ class SmsService : Service() {
             //     createNotification("Bắt đầu gửi tin nhắn...")
             // )
 
-            for ((customerIndex, customer) in customers.withIndex()) {
-                if (!isRunning) {
-                    Log.d(TAG, "Service stopped, breaking SMS sending loop")
-                    break
-                }
+            var currentIndex = 0
+            val shouldSendParallel = smsRepository.shouldSendParallelToDualSim(customers.size)
+            Log.d(TAG, "🚀 Starting SMS sending: ${customers.size} customers, shouldSendParallel: $shouldSendParallel")
+
+            while (currentIndex < customers.size && isRunning) {
+                Log.d(TAG, "🔄 While loop: currentIndex=$currentIndex, customers.size=${customers.size}, isRunning=$isRunning")
+                val customer = customers[currentIndex]
+                Log.d(TAG, "🔄 Processing customer $currentIndex/${customers.size}: ${customer.name} (${customer.phoneNumber})")
                 
-                Log.i(TAG, "📋 Processing customer ${customerIndex + 1}/${totalToSend}: ${customer.name} (${customer.phoneNumber})")
+                Log.i(TAG, "📋 Processing customer ${currentIndex + 1}/${totalToSend}: ${customer.name} (${customer.phoneNumber})")
                 
                 val currentTime = System.currentTimeMillis()
                 Log.d(TAG, "🕐 Current time: ${currentTime}")
@@ -442,16 +445,23 @@ class SmsService : Service() {
                     Log.d(TAG, "🚀 Attempting to send SMS to ${customer.name} (${customer.phoneNumber})")
                     Log.d(TAG, "📝 Message content: ${message.take(50)}${if (message.length > 50) "..." else ""}")
 
+                    // Kiểm tra xem có nên gửi song song 2 khách hàng vào 2 SIM không
+                    if (shouldSendParallel) {
+                        Log.d(TAG, "🔄 PARALLEL MODE: Gửi song song 2 khách hàng vào 2 SIM")
+                        val (sim1, sim2) = smsRepository.getDualSimIds()
+                        Log.d(TAG, "🔄 Customer $currentIndex → SIM ${if (currentIndex % 2 == 0) sim1 else sim2} (SIM1: $sim1, SIM2: $sim2)")
+                    }
+
                     // Sử dụng phương thức gửi SMS với delivery report để có thể theo dõi trạng thái
                     // Lấy SIM cho khách hàng này (dual SIM hoặc single SIM)
-                    val selectedSim = smsRepository.getSimForCustomer(customerIndex)
+                    val selectedSim = smsRepository.getSimForCustomer(currentIndex)
 
                     // Debug dual SIM
                     if (smsRepository.isDualSimEnabled()) {
                         val (sim1, sim2) = smsRepository.getDualSimIds()
-                        Log.d(TAG, "🔄 Dual SIM: Customer $customerIndex → SIM $selectedSim (SIM1: $sim1, SIM2: $sim2)")
+                        Log.d(TAG, "🔄 Dual SIM: Customer $currentIndex → SIM $selectedSim (SIM1: $sim1, SIM2: $sim2)")
                     } else {
-                        Log.d(TAG, "📱 Single SIM: Customer $customerIndex → SIM $selectedSim")
+                        Log.d(TAG, "📱 Single SIM: Customer $currentIndex → SIM $selectedSim")
                     }
 
                     var success = false
@@ -464,7 +474,47 @@ class SmsService : Service() {
                                 delay(retryDelaySeconds * 1000L)
                             }
 
-                            success = sendSmsWithDeliveryReport(customer.phoneNumber, message, selectedSim, customer)
+                            if (shouldSendParallel && currentIndex < customers.size - 1) {
+                                // Gửi song song 2 khách hàng vào 2 SIM bằng coroutine song song
+                                val nextCustomer = customers[currentIndex + 1]
+                                val nextMessage = formatMessage(templateContent, nextCustomer)
+                                val (sim1, sim2) = smsRepository.getDualSimIds()
+
+                                Log.d(TAG, "🔄 Sending parallel: Customer $currentIndex to SIM $sim1, Customer ${currentIndex + 1} to SIM $sim2")
+
+                                val results = coroutineScope {
+                                    val job1 = async { sendSmsWithDeliveryReport(customer.phoneNumber, message, sim1, customer) }
+                                    val job2 = async { sendSmsWithDeliveryReport(nextCustomer.phoneNumber, nextMessage, sim2, nextCustomer) }
+                                    job1.await() to job2.await()
+                                }
+                                val (success1, success2) = results
+                                success = success1 && success2
+
+                                if (success1) {
+                                    deleteCustomerAfterSuccessfulSend(customer)
+                                    val updatedCount1 = smsRepository.incrementSmsCount(sim1)
+                                    val forceUpdatedCount1 = smsRepository.forceRefreshSmsCount(sim1)
+                                    Log.d(TAG, "📊 Updated SMS count for SIM $sim1: $forceUpdatedCount1/40")
+                                    sendSmsCountUpdateBroadcast(sim1, forceUpdatedCount1)
+                                }
+                                if (success2) {
+                                    deleteCustomerAfterSuccessfulSend(nextCustomer)
+                                    val updatedCount2 = smsRepository.incrementSmsCount(sim2)
+                                    val forceUpdatedCount2 = smsRepository.forceRefreshSmsCount(sim2)
+                                    Log.d(TAG, "📊 Updated SMS count for SIM $sim2: $forceUpdatedCount2/40")
+                                    sendSmsCountUpdateBroadcast(sim2, forceUpdatedCount2)
+                                }
+                                // Nếu cả 2 thành công thì bỏ qua khách tiếp theo
+                                if (success) {
+                                    currentIndex += 2  // Tăng 2 vì đã xử lý 2 khách hàng
+                                    Log.d(TAG, "✅ Parallel send successful, processed 2 customers, next index: $currentIndex")
+                                } else {
+                                    Log.d(TAG, "❌ Parallel send failed, will retry current customer")
+                                }
+                            } else {
+                                // Gửi thông thường 1 khách hàng
+                                success = sendSmsWithDeliveryReport(customer.phoneNumber, message, selectedSim, customer)
+                            }
 
                             if (!success) {
                                 retryCount++
@@ -475,55 +525,70 @@ class SmsService : Service() {
                             Log.e(TAG, "❌ Exception during SMS sending to ${customer.phoneNumber}: ${e.message}", e)
                             retryCount++
                             totalRetries++
-
-                            // Đợi trước khi thử lại
                             delay(retryDelaySeconds * 1000L)
                         }
                     }
 
                     if (success) {
-                        totalSent++
-                        Log.d(TAG, "✅ Customer ${customer.name} processed successfully")
+                        // Khai báo successMessage ở đầu để tránh lỗi reassignment
+                        val successMessage = if (shouldSendParallel && currentIndex < customers.size - 1) {
+                            val nextCustomer = customers[currentIndex + 1]
+                            "🔄 Đã gửi song song: ${customer.name} → SIM1, ${nextCustomer.name} → SIM2"
+                        } else {
+                            "✅ Đã gửi SMS cho ${customer.name} (${customer.phoneNumber})"
+                        }
+                        
+                        if (shouldSendParallel && currentIndex < customers.size - 1) {
+                            // Đã xử lý song song 2 khách hàng
+                            totalSent += 2
+                            Log.d(TAG, "✅ Parallel processing completed for 2 customers")
+                            Log.d(TAG, "✅ Parallel SMS sent successfully")
+                            Log.d(TAG, "📋 Success recorded, will broadcast AFTER delay period (${intervalSeconds}s)")
+                        } else {
+                            // Xử lý thông thường 1 khách hàng
+                            totalSent++
+                            Log.d(TAG, "✅ Customer ${customer.name} processed successfully")
 
-                        // Xóa khách hàng khỏi danh sách UI sau khi gửi thành công
-                        deleteCustomerAfterSuccessfulSend(customer)
+                            // Xóa khách hàng khỏi danh sách UI sau khi gửi thành công
+                            deleteCustomerAfterSuccessfulSend(customer)
 
-                        // Ghi lại thông tin để gửi broadcast sau khi delay xong
-                        val successMessage = "✅ Đã gửi SMS cho ${customer.name} (${customer.phoneNumber})"
-                        Log.d(TAG, "✅ SMS sent successfully to ${customer.name}")
-                        Log.d(TAG, "📋 Success recorded, will broadcast AFTER delay period (${intervalSeconds}s)")
+                            Log.d(TAG, "✅ SMS sent successfully to ${customer.name}")
+                            Log.d(TAG, "📋 Success recorded, will broadcast AFTER delay period (${intervalSeconds}s)")
 
-                        // Tăng số lượng SMS đã gửi trong ngày
-                        val updatedCount = smsRepository.incrementSmsCount(selectedSim)
+                            // Tăng số lượng SMS đã gửi trong ngày (chỉ cho single SIM mode)
+                            val updatedCount = smsRepository.incrementSmsCount(selectedSim)
+                            val forceUpdatedCount = smsRepository.forceRefreshSmsCount(selectedSim)
+                            Log.d(TAG, "📊 Updated SMS count for SIM $selectedSim: $forceUpdatedCount/40, increment success: $updatedCount")
 
-                        // Force read the count again to ensure it's updated
-                        val forceUpdatedCount = smsRepository.forceRefreshSmsCount(selectedSim)
-                        Log.d(TAG, "📊 Updated SMS count for SIM $selectedSim: $forceUpdatedCount/40, increment success: $updatedCount")
-
-                        // Send broadcast to update UI with new SMS count
-                        sendSmsCountUpdateBroadcast(selectedSim, forceUpdatedCount)
+                            // Send broadcast to update UI with new SMS count
+                            sendSmsCountUpdateBroadcast(selectedSim, forceUpdatedCount)
+                        }
 
                         Log.d(TAG, "✅ SMS sent successfully to ${customer.name} (${customer.phoneNumber})")
 
                         // Kiểm tra xem đây có phải là khách hàng cuối cùng không
-                        val isLastCustomer = customerIndex >= customers.size - 1
+                        val isLastCustomer = if (shouldSendParallel && currentIndex < customers.size - 1) {
+                            currentIndex + 1 >= customers.size - 1
+                        } else {
+                            currentIndex >= customers.size - 1
+                        }
 
                         // Nếu đây là khách hàng cuối cùng, gửi completion broadcast ngay lập tức
                         if (isLastCustomer) {
                             val failedCount = totalToSend - totalSent
-                            val completionMessage = if (failedCount == 0) {
-                                "🏁 Đã hoàn thành gửi $totalSent/${totalToSend} tin nhắn"
-                            } else {
-                                "🏁 Đã hoàn thành: $totalSent thành công, $failedCount thất bại (tổng $totalToSend tin nhắn)"
+                            if (failedCount == 0) {
+                                val completionMessage = "🏁 Đã hoàn thành gửi $totalSent/$totalToSend tin nhắn"
+                                sendCompletionBroadcast(completionMessage)
                             }
-                            sendCompletionBroadcast(completionMessage)
                             Log.d(TAG, "🏁 Sent immediate completion broadcast for last customer")
                         }
 
                         // Chỉ đợi thêm nếu không phải là khách hàng cuối cùng
                         if (!isLastCustomer) {
-                            // Dual SIM: chỉ giảm thời gian chờ một nửa khi có ít nhất 2 khách hàng
-                            val effectiveInterval = if (smsRepository.isDualSimEnabled() && customers.size >= 2) {
+                            // Dual SIM parallel mode: không delay để gửi thực sự song song
+                            val effectiveInterval = if (shouldSendParallel) {
+                                0 // Không delay cho parallel mode để gửi thực sự song song
+                            } else if (smsRepository.isDualSimEnabled() && customers.size >= 2) {
                                 maxOf(intervalSeconds / 2, 1) // Giảm một nửa, tối thiểu 1 giây
                             } else {
                                 intervalSeconds
@@ -531,21 +596,23 @@ class SmsService : Service() {
 
                             val randomDelay = getRandomDelay(effectiveInterval)
                             Log.d(TAG, "⏳ Waiting ${randomDelay}ms (${randomDelay/1000}s) before next SMS...")
-                            Log.d(TAG, "⏳ Interval setting: ${intervalSeconds}s (effective: ${effectiveInterval}s, dual SIM: ${smsRepository.isDualSimEnabled()}, customers: ${customers.size})")
+                            Log.d(TAG, "⏳ Interval setting: ${intervalSeconds}s (effective: ${effectiveInterval}s, dual SIM: ${smsRepository.isDualSimEnabled()}, parallel: $shouldSendParallel)")
 
-                            // Chia nhỏ thời gian chờ để kiểm tra trạng thái service thường xuyên hơn
-                            val checkInterval = 1000L // 1 giây
-                            var remainingDelay = randomDelay
+                            // Chỉ delay nếu không phải parallel mode
+                            if (effectiveInterval > 0) {
+                                // Chia nhỏ thời gian chờ để kiểm tra trạng thái service thường xuyên hơn
+                                val checkInterval = 1000L // 1 giây
+                                var remainingDelay = randomDelay
 
-                            while (remainingDelay > 0 && isRunning) {
-                                val delayStep = minOf(checkInterval, remainingDelay)
-                                delay(delayStep)
-                                remainingDelay -= delayStep
+                                while (remainingDelay > 0 && isRunning) {
+                                    val delayStep = minOf(checkInterval, remainingDelay)
+                                    delay(delayStep)
+                                    remainingDelay -= delayStep
 
-                                // Cập nhật notification để giữ service trong foreground - thường xuyên hơn
-                                if (remainingDelay % 1000 == 0L) { // Cập nhật mỗi 1 giây
-                                    val remainingSecs = remainingDelay / 1000
-                                    val nextCustomerIndex = customerIndex + 1
+                                    // Cập nhật notification để giữ service trong foreground - thường xuyên hơn
+                                    if (remainingDelay % 1000 == 0L) { // Cập nhật mỗi 1 giây
+                                        val remainingSecs = remainingDelay / 1000
+                                    val nextCustomerIndex = currentIndex + 1
 
                                     // Tính tổng thời gian còn lại cho tất cả tin nhắn
                                     val remainingCustomers = totalToSend - totalSent
@@ -568,7 +635,15 @@ class SmsService : Service() {
 //                                    )
 
                                     // Cập nhật UI thông qua broadcast với tổng thời gian còn lại
-                                    val progressMessage = if (nextCustomerIndex < customers.size) {
+                                    val progressMessage = if (shouldSendParallel && nextCustomerIndex < customers.size - 1) {
+                                        val nextCustomer = customers[nextCustomerIndex]
+                                        val nextNextCustomer = customers[nextCustomerIndex + 1]
+                                        if (remainingCustomers > 0) {
+                                            "🔄 Còn lại: ${remainingSecs}s trước khi gửi song song cho ${nextCustomer.name} và ${nextNextCustomer.name} (Tổng: ${totalRemainingMinutes}m:${totalRemainingSecsDisplay}s)"
+                                        } else {
+                                            "🔄 Còn lại: ${remainingSecs}s trước khi gửi song song cho ${nextCustomer.name} và ${nextNextCustomer.name}"
+                                        }
+                                    } else if (nextCustomerIndex < customers.size) {
                                         val nextCustomer = customers[nextCustomerIndex]
                                         if (remainingCustomers > 0) {
                                             "Còn lại: ${remainingSecs}s trước khi gửi cho ${nextCustomer.name} (Tổng: ${totalRemainingMinutes}m:${totalRemainingSecsDisplay}s)"
@@ -586,7 +661,7 @@ class SmsService : Service() {
                                     )
                                 }
                             }
-                            
+
                             // Sau khi delay xong, gửi broadcast thành công
                             Log.d(TAG, "⏰ Delay period completed, sending success broadcast")
                             sendProgressBroadcast(
@@ -594,6 +669,15 @@ class SmsService : Service() {
                                 totalToSend,
                                 successMessage
                             )
+                            } else {
+                                // Parallel mode: không delay, gửi broadcast ngay
+                                Log.d(TAG, "🚀 Parallel mode: No delay, sending success broadcast immediately")
+                                sendProgressBroadcast(
+                                    totalSent,
+                                    totalToSend,
+                                    successMessage
+                                )
+                            }
                         } else {
                             Log.d(TAG, "🏁 Đã gửi tin nhắn cho khách hàng cuối cùng, không cần đợi thêm")
                             // Gửi broadcast ngay cho khách hàng cuối cùng
@@ -611,25 +695,37 @@ class SmsService : Service() {
                         
                         Log.w(TAG, "❌ Failed to send SMS to ${customer.name} after $retryCount attempts")
 
-                        val failureMessage = "❌ Lỗi gửi ${customer.name} (${customer.phoneNumber}) sau $retryCount lần thử - Tiếp tục với người tiếp theo"
+                        val failureMessage = if (shouldSendParallel && currentIndex < customers.size - 1) {
+                            val nextCustomer = customers[currentIndex + 1]
+                            "❌ Lỗi gửi song song cho ${customer.name} và ${nextCustomer.name} sau $retryCount lần thử - Tiếp tục với người tiếp theo"
+                        } else {
+                            "❌ Lỗi gửi ${customer.name} (${customer.phoneNumber}) sau $retryCount lần thử - Tiếp tục với người tiếp theo"
+                        }
                         
                         // KHÔNG xóa customer khi gửi thất bại
                         // Customer sẽ được giữ lại trong danh sách
                         Log.d(TAG, "📋 Customer ${customer.name} kept in list due to failed sending")
                         
                         // Vẫn cần delay trước khi xử lý customer tiếp theo
-                        val isLastCustomer = customerIndex >= customers.size - 1
+                        val isLastCustomer = currentIndex >= customers.size - 1
                         
                         if (!isLastCustomer) {
-                            // Dual SIM: chỉ giảm thời gian chờ một nửa khi có ít nhất 2 khách hàng
-                            val effectiveInterval = if (smsRepository.isDualSimEnabled() && customers.size >= 2) {
-                                maxOf(intervalSeconds / 2, 1)
+                            // Dual SIM parallel mode: không delay để gửi thực sự song song
+                            val effectiveInterval = if (shouldSendParallel) {
+                                0 // Không delay cho parallel mode
+                            } else if (smsRepository.isDualSimEnabled() && customers.size >= 2) {
+                                maxOf(intervalSeconds / 2, 1) // Giảm một nửa, tối thiểu 1 giây
                             } else {
                                 intervalSeconds
                             }
-                            val randomDelay = getRandomDelay(effectiveInterval)
-                            Log.d(TAG, "⏳ Waiting ${randomDelay}ms before next customer (after failure, dual SIM: ${smsRepository.isDualSimEnabled()})...")
-                            delay(randomDelay)
+
+                            if (effectiveInterval > 0) {
+                                val randomDelay = getRandomDelay(effectiveInterval)
+                                Log.d(TAG, "⏳ Waiting ${randomDelay}ms before next customer (after failure, dual SIM: ${smsRepository.isDualSimEnabled()})...")
+                                delay(randomDelay)
+                            } else {
+                                Log.d(TAG, "🚀 Parallel mode: No delay after failure")
+                            }
                             
                             // Gửi broadcast sau khi delay xong
                             Log.d(TAG, "⏰ Failure delay completed, sending failure broadcast")
@@ -655,25 +751,37 @@ class SmsService : Service() {
                     
                     Log.e(TAG, "💥 Processing error for ${customer.name}: ${e.message}")
 
-                    val exceptionMessage = "💥 Lỗi xử lý ${customer.name}: ${e.message} - Tiếp tục với người tiếp theo"
+                    val exceptionMessage = if (shouldSendParallel && currentIndex < customers.size - 1) {
+                        val nextCustomer = customers[currentIndex + 1]
+                        "💥 Lỗi xử lý song song cho ${customer.name} và ${nextCustomer.name}: ${e.message} - Tiếp tục với người tiếp theo"
+                    } else {
+                        "💥 Lỗi xử lý ${customer.name}: ${e.message} - Tiếp tục với người tiếp theo"
+                    }
 
                     // KHÔNG xóa customer khi có exception
                     // Customer sẽ được giữ lại trong danh sách
                     Log.d(TAG, "📋 Customer ${customer.name} kept in list due to processing exception")
                     
                     // Vẫn cần delay trước khi xử lý customer tiếp theo
-                    val isLastCustomer = customerIndex >= customers.size - 1
+                                            val isLastCustomer = currentIndex >= customers.size - 1
                     
                     if (!isLastCustomer) {
-                        // Dual SIM: chỉ giảm thời gian chờ một nửa khi có ít nhất 2 khách hàng
-                        val effectiveInterval = if (smsRepository.isDualSimEnabled() && customers.size >= 2) {
+                        // Dual SIM parallel mode: không delay để gửi thực sự song song
+                        val effectiveInterval = if (shouldSendParallel) {
+                            0 // Không delay cho parallel mode
+                        } else if (smsRepository.isDualSimEnabled() && customers.size >= 2) {
                             maxOf(intervalSeconds / 2, 1)
                         } else {
                             intervalSeconds
                         }
-                        val randomDelay = getRandomDelay(effectiveInterval)
-                        Log.d(TAG, "⏳ Waiting ${randomDelay}ms before next customer (after exception, dual SIM: ${smsRepository.isDualSimEnabled()})...")
-                        delay(randomDelay)
+
+                        if (effectiveInterval > 0) {
+                            val randomDelay = getRandomDelay(effectiveInterval)
+                            Log.d(TAG, "⏳ Waiting ${randomDelay}ms before next customer (after exception, dual SIM: ${smsRepository.isDualSimEnabled()})...")
+                            delay(randomDelay)
+                        } else {
+                            Log.d(TAG, "🚀 Parallel mode: No delay after exception")
+                        }
                         
                         // Gửi broadcast sau khi delay xong
                         Log.d(TAG, "⏰ Exception delay completed, sending exception broadcast")
@@ -694,19 +802,28 @@ class SmsService : Service() {
 
                 // Continue processing next customer
                 Log.d(TAG, "🔄 Finished processing customer ${customer.name}")
+
+                // Tăng currentIndex để xử lý khách hàng tiếp theo
+                // Trong parallel mode, currentIndex đã được tăng +2 trong logic gửi song song nếu thành công
+                // Chỉ tăng +1 nếu không phải parallel mode
+                Log.d(TAG, "🔍 Before increment: currentIndex=$currentIndex, shouldSendParallel=$shouldSendParallel, customers.size=${customers.size}")
+                if (!shouldSendParallel) {
+                    currentIndex++
+                    Log.d(TAG, "➡️ Single mode: Moving to next customer: $currentIndex")
+                } else {
+                    Log.d(TAG, "⏭️ Parallel mode: currentIndex already handled in parallel logic")
+                }
             }
 
             // Hoàn thành gửi SMS
             val failedCount = totalToSend - totalSent
             Log.i(TAG, "🏁 SMS sending completed: $totalSent/$totalToSend messages sent, $failedCount failed")
-            
-            val completionMessage = if (failedCount == 0) {
-                "🏁 Đã hoàn thành gửi $totalSent/${totalToSend} tin nhắn"
-            } else {
-                "🏁 Đã hoàn thành: $totalSent thành công, $failedCount thất bại (tổng $totalToSend tin nhắn)"
+
+            if (failedCount == 0) {
+                val completionMessage = "🏁 Đã hoàn thành gửi $totalSent/$totalToSend tin nhắn"
+                sendCompletionBroadcast(completionMessage)
             }
-            
-            sendCompletionBroadcast(completionMessage)
+
 
             Log.d(TAG, "🏁 SMS sending process completed")
 

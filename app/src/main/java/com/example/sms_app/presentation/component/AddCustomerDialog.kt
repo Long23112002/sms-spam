@@ -58,7 +58,7 @@ enum class CustomerField(
     Id(
         Icons.Default.DocumentScanner,
         "Cột B - Số CCCD (yyy)",
-        KeyboardType.Number,
+        KeyboardType.Text,
         default = "123456789"
     ),
     PhoneNumber(

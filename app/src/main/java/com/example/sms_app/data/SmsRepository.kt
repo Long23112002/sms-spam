@@ -307,6 +307,13 @@ class SmsRepository @Inject constructor (@ApplicationContext context: Context) {
         }
     }
 
+    /**
+     * Kiểm tra xem có nên gửi song song 2 khách hàng vào 2 SIM không
+     */
+    fun shouldSendParallelToDualSim(selectedCustomersCount: Int): Boolean {
+        return isDualSimEnabled() && selectedCustomersCount >= 2
+    }
+
     fun setDefaultTemplate(templateId: Int) {
         prefs.edit().putInt(KEY_DEFAULT_TEMPLATE, templateId).apply()
     }
