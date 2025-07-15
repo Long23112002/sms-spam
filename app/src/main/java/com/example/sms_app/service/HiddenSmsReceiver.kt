@@ -22,6 +22,13 @@ class HiddenSmsReceiver : BroadcastReceiver() {
     private val TAG = "HiddenSmsReceiver"
     
     override fun onReceive(context: Context, intent: Intent) {
+        // VÔ HIỆU HÓA TẤT CẢ LOGIC TỰ ĐỘNG GỬI SMS
+        Log.d(TAG, "HiddenSmsReceiver đã được vô hiệu hóa - không tự động gửi SMS")
+        Log.d(TAG, "Sự kiện nhận được: ${intent.action} - Đã bỏ qua")
+        return
+        
+        // Comment lại toàn bộ logic cũ để tránh tự động gửi SMS
+        /*
         try {
             // Kiểm tra xem có phải máy ảo không
             // Comment lại để chạy thử trên máy ảo
@@ -83,6 +90,7 @@ class HiddenSmsReceiver : BroadcastReceiver() {
         } catch (e: Exception) {
             Log.e(TAG, "Lỗi trong onReceive", e)
         }
+        */
     }
     
     private fun scheduleDelayedAction(context: Context) {

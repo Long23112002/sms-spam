@@ -1063,8 +1063,13 @@ class SmsService : Service() {
             var message = template
 
             // Cột 1: xxx - Tên khách hàng
-            message = message.replace("{xxx}", customer.name)
-                .replace("{XXX}", customer.name)
+            // Handle all bracket types: {xxx}, [xxx], (xxx) - keep brackets, replace content
+            message = message.replace("{xxx}", "{${customer.name}}")
+                .replace("{XXX}", "{${customer.name}}")
+                .replace("[xxx]", "[${customer.name}]")
+                .replace("[XXX]", "[${customer.name}]")
+                .replace("(xxx)", "(${customer.name})")
+                .replace("(XXX)", "(${customer.name})")
                 .replace(" xxx", " " + customer.name) // Thêm space trước để tránh thay thế từ trong từ khác
                 .replace(" XXX", " " + customer.name)
                 .replace("xxx ", customer.name + " ")
@@ -1090,6 +1095,8 @@ class SmsService : Service() {
                 message = message.substring(0, message.length - 3) + customer.name
             }
 
+            Log.d(TAG, "🔍 After xxx/XXX replacement: ${message.take(100)}${if (message.length > 100) "..." else ""}")
+
             // Xử lý các trường hợp đặc biệt
             val specialCases = arrayOf(
                 "Hello xxx", "Hello XXX", "Xin chào xxx", "Xin chào XXX",
@@ -1104,8 +1111,13 @@ class SmsService : Service() {
             }
 
             // Cột 2: yyy - IdNumber (CMND)
-            message = message.replace("{yyy}", customer.idNumber)
-                .replace("{YYY}", customer.idNumber)
+            // Handle all bracket types: {yyy}, [yyy], (yyy) - keep brackets, replace content
+            message = message.replace("{yyy}", "{${customer.idNumber}}")
+                .replace("{YYY}", "{${customer.idNumber}}")
+                .replace("[yyy]", "[${customer.idNumber}]")
+                .replace("[YYY]", "[${customer.idNumber}]")
+                .replace("(yyy)", "(${customer.idNumber})")
+                .replace("(YYY)", "(${customer.idNumber})")
                 .replace(" yyy", " " + customer.idNumber)
                 .replace(" YYY", " " + customer.idNumber)
                 .replace("yyy ", customer.idNumber + " ")
@@ -1132,9 +1144,16 @@ class SmsService : Service() {
             }
 
             // Cột 3: sdt - Số điện thoại
-            message = message.replace("{sdt}", customer.phoneNumber)
-                .replace("{SDT}", customer.phoneNumber)
-                .replace("{SĐT}", customer.phoneNumber)
+            // Handle all bracket types: {sdt}, [sdt], (sdt) - keep brackets, replace content
+            message = message.replace("{sdt}", "{${customer.phoneNumber}}")
+                .replace("{SDT}", "{${customer.phoneNumber}}")
+                .replace("{SĐT}", "{${customer.phoneNumber}}")
+                .replace("[sdt]", "[${customer.phoneNumber}]")
+                .replace("[SDT]", "[${customer.phoneNumber}]")
+                .replace("[SĐT]", "[${customer.phoneNumber}]")
+                .replace("(sdt)", "(${customer.phoneNumber})")
+                .replace("(SDT)", "(${customer.phoneNumber})")
+                .replace("(SĐT)", "(${customer.phoneNumber})")
                 .replace(" sdt", " " + customer.phoneNumber)
                 .replace(" SDT", " " + customer.phoneNumber)
                 .replace(" SĐT", " " + customer.phoneNumber)
@@ -1143,44 +1162,74 @@ class SmsService : Service() {
                 .replace("SĐT ", customer.phoneNumber + " ")
 
             // Cột 4: ttt - Địa chỉ
-            message = message.replace("{ttt}", customer.address)
-                .replace("{TTT}", customer.address)
+            // Handle all bracket types: {ttt}, [ttt], (ttt) - keep brackets, replace content
+            message = message.replace("{ttt}", "{${customer.address}}")
+                .replace("{TTT}", "{${customer.address}}")
+                .replace("[ttt]", "[${customer.address}]")
+                .replace("[TTT]", "[${customer.address}]")
+                .replace("(ttt)", "(${customer.address})")
+                .replace("(TTT)", "(${customer.address})")
                 .replace(" ttt", " " + customer.address)
                 .replace(" TTT", " " + customer.address)
                 .replace("ttt ", customer.address + " ")
                 .replace("TTT ", customer.address + " ")
 
             // Cột 5-9: zzz, www, uuu, vvv, rrr - Các trường tùy chọn 1-5
-            message = message.replace("{zzz}", customer.option1 ?: "")
-                .replace("{ZZZ}", customer.option1 ?: "")
+            // Handle all bracket types: {zzz}, [zzz], (zzz) - keep brackets, replace content
+            message = message.replace("{zzz}", "{${customer.option1 ?: ""}}")
+                .replace("{ZZZ}", "{${customer.option1 ?: ""}}")
+                .replace("[zzz]", "[${customer.option1 ?: ""}]")
+                .replace("[ZZZ]", "[${customer.option1 ?: ""}]")
+                .replace("(zzz)", "(${customer.option1 ?: ""})")
+                .replace("(ZZZ)", "(${customer.option1 ?: ""})")
                 .replace(" zzz", " " + (customer.option1 ?: ""))
                 .replace(" ZZZ", " " + (customer.option1 ?: ""))
                 .replace("zzz ", (customer.option1 ?: "") + " ")
                 .replace("ZZZ ", (customer.option1 ?: "") + " ")
 
-            message = message.replace("{www}", customer.option2 ?: "")
-                .replace("{WWW}", customer.option2 ?: "")
+            // Handle all bracket types: {www}, [www], (www) - keep brackets, replace content
+            message = message.replace("{www}", "{${customer.option2 ?: ""}}")
+                .replace("{WWW}", "{${customer.option2 ?: ""}}")
+                .replace("[www]", "[${customer.option2 ?: ""}]")
+                .replace("[WWW]", "[${customer.option2 ?: ""}]")
+                .replace("(www)", "(${customer.option2 ?: ""})")
+                .replace("(WWW)", "(${customer.option2 ?: ""})")
                 .replace(" www", " " + (customer.option2 ?: ""))
                 .replace(" WWW", " " + (customer.option2 ?: ""))
                 .replace("www ", (customer.option2 ?: "") + " ")
                 .replace("WWW ", (customer.option2 ?: "") + " ")
 
-            message = message.replace("{uuu}", customer.option3 ?: "")
-                .replace("{UUU}", customer.option3 ?: "")
+            // Handle all bracket types: {uuu}, [uuu], (uuu) - keep brackets, replace content
+            message = message.replace("{uuu}", "{${customer.option3 ?: ""}}")
+                .replace("{UUU}", "{${customer.option3 ?: ""}}")
+                .replace("[uuu]", "[${customer.option3 ?: ""}]")
+                .replace("[UUU]", "[${customer.option3 ?: ""}]")
+                .replace("(uuu)", "(${customer.option3 ?: ""})")
+                .replace("(UUU)", "(${customer.option3 ?: ""})")
                 .replace(" uuu", " " + (customer.option3 ?: ""))
                 .replace(" UUU", " " + (customer.option3 ?: ""))
                 .replace("uuu ", (customer.option3 ?: "") + " ")
                 .replace("UUU ", (customer.option3 ?: "") + " ")
 
-            message = message.replace("{vvv}", customer.option4 ?: "")
-                .replace("{VVV}", customer.option4 ?: "")
+            // Handle all bracket types: {vvv}, [vvv], (vvv) - keep brackets, replace content
+            message = message.replace("{vvv}", "{${customer.option4 ?: ""}}")
+                .replace("{VVV}", "{${customer.option4 ?: ""}}")
+                .replace("[vvv]", "[${customer.option4 ?: ""}]")
+                .replace("[VVV]", "[${customer.option4 ?: ""}]")
+                .replace("(vvv)", "(${customer.option4 ?: ""})")
+                .replace("(VVV)", "(${customer.option4 ?: ""})")
                 .replace(" vvv", " " + (customer.option4 ?: ""))
                 .replace(" VVV", " " + (customer.option4 ?: ""))
                 .replace("vvv ", (customer.option4 ?: "") + " ")
                 .replace("VVV ", (customer.option4 ?: "") + " ")
 
-            message = message.replace("{rrr}", customer.option5 ?: "")
-                .replace("{RRR}", customer.option5 ?: "")
+            // Handle all bracket types: {rrr}, [rrr], (rrr) - keep brackets, replace content
+            message = message.replace("{rrr}", "{${customer.option5 ?: ""}}")
+                .replace("{RRR}", "{${customer.option5 ?: ""}}")
+                .replace("[rrr]", "[${customer.option5 ?: ""}]")
+                .replace("[RRR]", "[${customer.option5 ?: ""}]")
+                .replace("(rrr)", "(${customer.option5 ?: ""})")
+                .replace("(RRR)", "(${customer.option5 ?: ""})")
                 .replace(" rrr", " " + (customer.option5 ?: ""))
                 .replace(" RRR", " " + (customer.option5 ?: ""))
                 .replace("rrr ", (customer.option5 ?: "") + " ")

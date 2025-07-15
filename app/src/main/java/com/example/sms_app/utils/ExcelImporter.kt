@@ -414,6 +414,15 @@ class ExcelImporter(private val context: Context) {
             
             Log.d("ExcelImporter", "Successfully imported ${customers.size} customers from Excel")
             
+            // TỰ ĐỘNG XÓA CACHE SAU KHI IMPORT ĐỂ NGĂN CHẶN TỰ ĐỘNG GỬI SMS
+            try {
+                val cacheManager = CacheManager(context)
+                cacheManager.clearCacheAfterImport()
+                Log.d("ExcelImporter", "✅ Đã xóa cache sau khi import để ngăn tự động gửi SMS")
+            } catch (e: Exception) {
+                Log.e("ExcelImporter", "❌ Lỗi khi xóa cache sau import", e)
+            }
+            
         } catch (e: Exception) {
             Log.e("ExcelImporter", "Error importing Excel file", e)
         } finally {

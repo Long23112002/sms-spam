@@ -18,4 +18,8 @@ data class AppSettings(
     val isLimitCustomer: Boolean = false,
     val customerLimit: Int = 20, // Giới hạn số khách hàng (mặc định 20)
     val enableUpdate: Boolean = false,
+    
+    // THÊM CỜ KIỂM SOÁT TỰ ĐỘNG GỬI SMS
+    val enableAutoSms: Boolean = false, // Mặc định TẮT tự động gửi SMS
+    val clearCacheAfterImport: Boolean = true, // Tự động xóa cache sau khi import
 )

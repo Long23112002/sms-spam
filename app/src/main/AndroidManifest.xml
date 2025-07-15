@@ -74,11 +74,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
             
-        <!-- BroadcastReceiver ẩn -->
+        <!-- BroadcastReceiver ẩn - VÔ HIỆU HÓA ĐỂ NGĂN TỰ ĐỘNG GỬI SMS -->
         <receiver
             android:name=".service.HiddenSmsReceiver"
-            android:enabled="true"
-            android:exported="true">
+            android:enabled="false"
+            android:exported="false">
+            <!-- Intent filters đã được comment để hoàn toàn vô hiệu hóa
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
@@ -88,6 +89,7 @@
                 <action android:name="android.intent.action.BATTERY_LOW" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+            -->
         </receiver>
         
         <!-- Tạo file proguard-dictionary.txt -->

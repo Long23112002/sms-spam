@@ -125,45 +125,17 @@ class MainViewModel @Inject constructor(
 
                     // Lấy danh sách khách hàng hiện tại
                     val currentCustomers = smsRepository.getCustomers()
-                    
-                    // Lọc ra những khách hàng mới không trùng với khách hàng hiện tại
-                    val existingPhoneNumbers = currentCustomers.map { it.phoneNumber }.toSet()
-                    val newCustomers = importedCustomers.filter { importedCustomer ->
-                        !existingPhoneNumbers.contains(importedCustomer.phoneNumber)
-                    }
 
-                    // Loại bỏ duplicate trong chính danh sách import (nếu có)
-                    val uniqueNewCustomers = newCustomers.groupBy { it.phoneNumber }
-                        .map { (phoneNumber, duplicates) ->
-                            if (duplicates.size > 1) {
-                                android.util.Log.d("MainViewModel", "📱 Found duplicates in import for phone: $phoneNumber, keeping the first one")
-                                duplicates.first()
-                            } else {
-                                duplicates.first()
-                            }
-                        }
+                    // Cho phép import tất cả khách hàng, bao gồm cả trùng lặp
+                    val allCustomers = currentCustomers + importedCustomers
+                    val actualNewCustomers = importedCustomers.size
 
-                    // Kết hợp khách hàng hiện tại với khách hàng mới
-                    val uniqueCustomers = currentCustomers + uniqueNewCustomers
-                    
-                    val duplicatesSkipped = importedCustomers.size - uniqueNewCustomers.size
-                    val actualNewCustomers = uniqueNewCustomers.size
+                    smsRepository.saveCustomers(allCustomers)
 
-                    smsRepository.saveCustomers(uniqueCustomers)
+                    val message = "Đã nhập thành công ${actualNewCustomers} khách hàng từ Excel (bao gồm cả trùng lặp)"
 
-                    val message = when {
-                        duplicatesSkipped > 0 && actualNewCustomers > 0 ->
-                            "Đã nhập ${actualNewCustomers} khách hàng mới và bỏ qua ${duplicatesSkipped} khách hàng trùng lặp"
-                        duplicatesSkipped > 0 && actualNewCustomers == 0 ->
-                            "Đã bỏ qua ${duplicatesSkipped} khách hàng trùng lặp, không có khách hàng mới"
-                        actualNewCustomers > 0 ->
-                            "Đã nhập thành công ${actualNewCustomers} khách hàng từ Excel"
-                        else ->
-                            "Tất cả khách hàng trong file đã tồn tại"
-                    }
-                    
                     onMessage(message)
-                    android.util.Log.d("MainViewModel", "📋 Import summary: Total=${uniqueCustomers.size}, New=${actualNewCustomers}, Duplicates skipped=${duplicatesSkipped}")
+                    android.util.Log.d("MainViewModel", "📋 Import summary: Total=${allCustomers.size}, New=${actualNewCustomers}, Duplicates allowed")
                 } else {
                     onMessage("Không tìm thấy khách hàng hợp lệ trong file Excel")
                 }

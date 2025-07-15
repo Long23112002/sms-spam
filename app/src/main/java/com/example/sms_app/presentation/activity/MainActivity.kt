@@ -21,6 +21,7 @@ import com.example.sms_app.presentation.screen.MainScreen
 import com.example.sms_app.presentation.theme.SmsAppTheme
 import com.example.sms_app.presentation.viewmodel.SendMessageViewModel
 import com.example.sms_app.service.SmsService
+import com.example.sms_app.utils.AutoSmsDisabler
 import dagger.hilt.android.AndroidEntryPoint
 
 @AndroidEntryPoint
@@ -28,6 +29,10 @@ class MainActivity : androidx.activity.ComponentActivity() {
     @SuppressLint("InlinedApi")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Đảm bảo ứng dụng luôn ở chế độ an toàn - không tự động gửi SMS
+        AutoSmsDisabler.initializeSafeMode(this)
+
         setContent {
             SmsAppTheme {
                 Surface {
