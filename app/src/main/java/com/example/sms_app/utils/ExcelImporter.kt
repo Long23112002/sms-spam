@@ -279,22 +279,34 @@ class ExcelImporter(private val context: Context) {
             val workbook = WorkbookFactory.create(inputStream)
             val sheet = workbook.getSheetAt(0) // Get first sheet
             
-            // Skip header row
-            val startRow = 1
+            // Bắt đầu từ dòng đầu tiên (không bỏ qua header)
+            val startRow = 0
             var emptyRowCount = 0
             var consecutiveEmptyRows = 0
             
             Log.d("ExcelImporter", "Reading data from Excel sheet with ${sheet.physicalNumberOfRows} rows")
-            
+            Log.d("ExcelImporter", "Starting from row $startRow (0-based index)")
+
+            var totalRowsProcessed = 0
+            var validCustomersFound = 0
+            var skippedRows = 0
+
             for (rowIndex in startRow until sheet.physicalNumberOfRows) {
+                totalRowsProcessed++
                 val row = sheet.getRow(rowIndex) ?: continue
+
+                // Log dòng đầu tiên để đảm bảo không bị bỏ qua
+                if (rowIndex == 0) {
+                    Log.d("ExcelImporter", "🔍 Processing FIRST ROW (index 0)")
+                }
                 
                 // Check if this row is empty
                 val isRowEmpty = isEmptyRow(row)
                 if (isRowEmpty) {
                     emptyRowCount++
-                    Log.d("ExcelImporter", "Empty row detected at $rowIndex, empty row count: $emptyRowCount")
-                    
+                    skippedRows++
+                    Log.d("ExcelImporter", "Row $rowIndex: Empty row detected, count: $emptyRowCount")
+
                     // Stop processing after 3 consecutive empty rows
                     if (emptyRowCount >= 3) {
                         Log.d("ExcelImporter", "Stopping import after 3 consecutive empty rows at row $rowIndex")
@@ -337,9 +349,10 @@ class ExcelImporter(private val context: Context) {
                 Log.d("ExcelImporter", "  Cleaned name: '$name'")
                 Log.d("ExcelImporter", "  Cleaned phone: '$phoneNumber'")
                 
-                // Validate minimum required data
-                if (name.isBlank() && phoneNumber.isBlank()) {
-                    Log.d("ExcelImporter", "Row $rowIndex: Skipped - both name and phone are empty")
+                // Chỉ cần có số điện thoại là đủ để import
+                if (phoneNumber.isBlank()) {
+                    skippedRows++
+                    Log.d("ExcelImporter", "Row $rowIndex: SKIPPED - phone number is empty")
                     consecutiveEmptyRows++
                     if (consecutiveEmptyRows >= 3) {
                         Log.d("ExcelImporter", "Found 3 consecutive empty rows, stopping import")
@@ -350,43 +363,8 @@ class ExcelImporter(private val context: Context) {
                 
                 consecutiveEmptyRows = 0 // Reset counter khi tìm thấy dữ liệu
                 
-                // Clean and validate phone number
-                val cleanedPhone = cleanPhoneNumber(phoneNumber)
-                
-                // Skip invalid phone numbers
-                if (cleanedPhone.isBlank() || cleanedPhone.length < 9) {
-                    Log.w("ExcelImporter", "Skipping row $rowIndex - Invalid phone number: '$phoneNumber' -> '$cleanedPhone'")
-                    continue
-                }
-                
-                // Final check for specific problematic prefixes
-                if (cleanedPhone.startsWith("0946") || cleanedPhone.startsWith("0167")) {
-                    Log.w("ExcelImporter", "⚠️ Warning: Potentially problematic prefix detected in phone number: $cleanedPhone")
-                }
-                
-                // Validate using Vietnamese carrier prefixes
-                val prefix = cleanedPhone.substring(0, 3)
-                val validPrefixes = listOf(
-                    // Viettel
-                    "032", "033", "034", "035", "036", "037", "038", "039",
-                    "086", "096", "097", "098",
-                    // Mobifone
-                    "070", "076", "077", "078", "079",
-                    "089", "090", "093",
-                    // Vinaphone
-                    "081", "082", "083", "084", "085",
-                    "088", "091", "094",
-                    // Vietnamobile
-                    "056", "058", "092",
-                    // ITelecom
-                    "099",
-                    // Reddi/Gmobile
-                    "059"
-                )
-                
-                if (!validPrefixes.contains(prefix)) {
-                    Log.w("ExcelImporter", "⚠️ Warning: Invalid Vietnamese carrier prefix: $prefix in number $cleanedPhone")
-                }
+                // Chỉ clean phone number cơ bản, không validate
+                val cleanedPhone = phoneNumber.trim()
                 
                 // Create customer object with UUID-based ID to ensure uniqueness
                 val customer = Customer(
@@ -405,14 +383,23 @@ class ExcelImporter(private val context: Context) {
                     templateNumber = templateId
                 )
                 
-                // Only add valid customers to the list
-                if (customer.name.isNotBlank() || customer.phoneNumber.isNotBlank()) {
+                // Chỉ cần có số điện thoại là thêm vào danh sách
+                if (customer.phoneNumber.isNotBlank()) {
                     customers.add(customer)
-                    Log.d("ExcelImporter", "Added customer: ${customer.name} with phone ${customer.phoneNumber}")
+                    validCustomersFound++
+                    Log.d("ExcelImporter", "Row $rowIndex: ADDED customer: '${customer.name}' with phone '${customer.phoneNumber}'")
+                } else {
+                    skippedRows++
+                    Log.w("ExcelImporter", "Row $rowIndex: SKIPPED - Customer has no phone number")
                 }
             }
             
-            Log.d("ExcelImporter", "Successfully imported ${customers.size} customers from Excel")
+            Log.d("ExcelImporter", "📊 IMPORT SUMMARY:")
+            Log.d("ExcelImporter", "   Total rows processed: $totalRowsProcessed")
+            Log.d("ExcelImporter", "   Valid customers found: $validCustomersFound")
+            Log.d("ExcelImporter", "   Rows skipped: $skippedRows")
+            Log.d("ExcelImporter", "   Final customer list size: ${customers.size}")
+            Log.d("ExcelImporter", "✅ Successfully imported ${customers.size} customers from Excel")
             
             // TỰ ĐỘNG XÓA CACHE SAU KHI IMPORT ĐỂ NGĂN CHẶN TỰ ĐỘNG GỬI SMS
             try {
@@ -539,20 +526,28 @@ class ExcelImporter(private val context: Context) {
     }
 
     private fun determineCarrier(phoneNumber: String): String {
-        val cleanedPhone = cleanPhoneNumber(phoneNumber)
-        val prefix = cleanedPhone.substring(0, 3)
+        try {
+            val cleanedPhone = cleanPhoneNumber(phoneNumber)
+            if (cleanedPhone.length < 3) {
+                return "Unknown"
+            }
+            val prefix = cleanedPhone.substring(0, 3)
 
-        return when (prefix) {
-            "032", "033", "034", "035", "036", "037", "038", "039" -> "Viettel"
-            "086", "096", "097", "098" -> "Viettel"
-            "070", "076", "077", "078", "079" -> "Mobifone"
-            "089", "090", "093" -> "Mobifone"
-            "081", "082", "083", "084", "085" -> "Vinaphone"
-            "088", "091", "094" -> "Vinaphone"
-            "056", "058", "092" -> "Vietnamobile"
-            "099" -> "ITelecom"
-            "059" -> "Reddi/Gmobile"
-            else -> "Unknown"
+            return when (prefix) {
+                "032", "033", "034", "035", "036", "037", "038", "039" -> "Viettel"
+                "086", "096", "097", "098" -> "Viettel"
+                "070", "076", "077", "078", "079" -> "Mobifone"
+                "089", "090", "093" -> "Mobifone"
+                "081", "082", "083", "084", "085" -> "Vinaphone"
+                "088", "091", "094" -> "Vinaphone"
+                "056", "058", "092" -> "Vietnamobile"
+                "099" -> "ITelecom"
+                "059" -> "Reddi/Gmobile"
+                else -> "Unknown"
+            }
+        } catch (e: Exception) {
+            Log.w("ExcelImporter", "Error determining carrier for phone: $phoneNumber", e)
+            return "Unknown"
         }
     }
 
