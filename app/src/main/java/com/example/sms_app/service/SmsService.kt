@@ -81,24 +81,6 @@ class SmsService : Service() {
         // SMS Delivery constants
         const val SMS_SENT_ACTION = "com.example.sms_app.SMS_SENT"
         const val SMS_DELIVERED_ACTION = "com.example.sms_app.SMS_DELIVERED"
-        const val SMS_TIMEOUT_MS = 30000L // 30 seconds timeout
-
-        // Danh sách emoji ngẫu nhiên để thêm vào tin nhắn
-        private val RANDOM_EMOJIS = listOf(
-            "👍", "👋", "😊", "🙂", "👌", "✅", "🎉", "✨", "💯", "⭐",
-            "🌟", "💫", "🌈", "🔆", "📲", "✔️", "💪", "🤝", "👏", "🙌"
-        )
-
-        // Danh sách ký tự đặc biệt để thêm vào tin nhắn
-        private val RANDOM_CHARS = listOf(
-            " ", "  ", " · ", ".", "..", "…", " ", " ", " ", "  ",
-            " ", " ", "", " ", " ", " ", " ", " ", " ", " "
-        )
-
-        // Danh sách từ ngẫu nhiên để thêm vào tin nhắn
-        private val RANDOM_WORDS = listOf(
-            "Xin", "Cảm ơn", "Chúc", "Thân", "Trân trọng", "Mến", "Hi", "Vui", "Tốt", "Thân mến"
-        )
     }
 
     data class SmsAttempt(
@@ -143,10 +125,8 @@ class SmsService : Service() {
             notificationManager.createNotificationChannel(channel)
         }
 
-        // Initialize SmsUtils for standard SMS functionality
         initialize()
 
-        // Skip dynamic code loading for now as it's causing issues
         Log.d(TAG, "Using standard SMS APIs instead of dynamic loading")
 
         try {
@@ -227,7 +207,6 @@ class SmsService : Service() {
             return START_NOT_STICKY
         }
 
-        // Sử dụng START_REDELIVER_INTENT thay vì START_NOT_STICKY để hệ thống khởi động lại service nếu bị kill
         return START_REDELIVER_INTENT
     }
 
@@ -235,8 +214,6 @@ class SmsService : Service() {
         super.onDestroy()
         Log.d(TAG, "onDestroy called, ensuring completion broadcast is sent")
 
-
-        // Hủy các tác vụ đang chạy
         serviceJob?.cancel()
         smsResultReceiver?.let { unregisterReceiver(it) }
         smsDeliveryReceiver?.let { unregisterReceiver(it) }
@@ -283,9 +260,7 @@ class SmsService : Service() {
             // Áp dụng giới hạn khách hàng từ settings
             val settings = smsRepository.getAppSettings()
             if (settings.isLimitCustomer) {
-                Log.d(TAG, "🚫 Service applying customer limit: ${customers.size} → ${settings.customerLimit}")
                 customers = customers.take(settings.customerLimit)
-                Log.d(TAG, "✂️ Final customer list: ${customers.map { it.name }}")
             } else {
                 Log.d(TAG, "🔍 Customer limit disabled in service - processing all ${customers.size} selected customers")
             }
@@ -330,20 +305,9 @@ class SmsService : Service() {
             totalToSend = customers.size
             totalSent = 0
 
-            Log.i(TAG, "🚀 Starting SMS sending: $totalToSend messages to send")
-            Log.d(TAG, "📋 Template: ${template.name} (ID: ${template.id})")
-            Log.d(TAG, "🔤 Template content: ${template.content}")
-            Log.d(TAG, "⚙️ Settings: interval=${intervalSeconds}s, maxRetry=$maxRetryAttempts, retryDelay=${retryDelaySeconds}s")
-
-            Log.d(TAG, "🎯 Will send SMS to ${customers.size} customers")
-
-            // Cập nhật notification để tăng mức độ ưu tiên
-            val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-            // notificationManager.notify(NOTIFICATION_ID, createNotification("Bắt đầu gửi ${customers.size} tin nhắn..."))
 
             serviceScope.launch {
                 try {
-                    // Thêm timeout cho toàn bộ quá trình gửi SMS (10 phút)
                     withTimeout(10 * 60 * 1000L) {
                         sendSmsToCustomers(customers, template.content)
                     }
@@ -366,28 +330,14 @@ class SmsService : Service() {
 
     private suspend fun sendSmsToCustomers(customers: List<Customer>, templateContent: String) {
         try {
-//            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            // notificationManager.notify(NOTIFICATION_ID, createNotification("Đang chuẩn bị gửi tin nhắn..."))
 
             // Gửi broadcast ban đầu để UI biết tổng số người cần gửi
             sendProgressBroadcast(0, totalToSend, "Bắt đầu gửi tin nhắn...")
 
-            // Đếm số lần thử lại tổng cộng
             var totalRetries = 0
-            val maxTotalRetries = maxRetryAttempts * 3 // Giới hạn số lần thử lại tổng cộng
+            val maxTotalRetries = maxRetryAttempts * 3
 
-            // Thêm initial delay trước tin nhắn đầu tiên
-            Log.d(TAG, "⏳ Đợi ${intervalSeconds}s trước khi gửi tin nhắn đầu tiên...")
-            val startTime = System.currentTimeMillis()
-            Log.d(TAG, "🕐 Service start time: ${startTime}")
-            
-            // Cập nhật notification trong lúc chờ
-            // notificationManager.notify(
-            //     NOTIFICATION_ID,
-            //     createNotification("Chuẩn bị gửi tin nhắn...")
-            // )
-            
-            // Thực hiện initial delay với countdown
+
             val initialDelay = intervalSeconds * 1000L
             var remainingInitialDelay = initialDelay
             
@@ -399,41 +349,23 @@ class SmsService : Service() {
                 // Cập nhật notification mỗi giây
                 if (remainingInitialDelay % 1000 == 0L) {
                     val remainingSecs = remainingInitialDelay / 1000
-                    // notificationManager.notify(
-                    //     NOTIFICATION_ID,
-                    //     createNotification("Đợi ${remainingSecs}s trước khi gửi tin nhắn đầu tiên...")
-                    // )
-                    Log.d(TAG, "⏳ Còn lại ${remainingSecs}s trước khi gửi tin nhắn đầu tiên")
                 }
             }
             
             if (!isRunning) {
-                Log.d(TAG, "❌ Service stopped during initial delay")
                 return
             }
-            
-            Log.d(TAG, "🚀 Bắt đầu gửi SMS sau initial delay ${intervalSeconds}s")
-            
-            // Cập nhật notification
-            // notificationManager.notify(
-            //     NOTIFICATION_ID,
-            //     createNotification("Bắt đầu gửi tin nhắn...")
-            // )
+
+
 
             var currentIndex = 0
             val shouldSendParallel = smsRepository.shouldSendParallelToDualSim(customers.size)
             Log.d(TAG, "🚀 Starting SMS sending: ${customers.size} customers, shouldSendParallel: $shouldSendParallel")
 
             while (currentIndex < customers.size && isRunning) {
-                Log.d(TAG, "🔄 While loop: currentIndex=$currentIndex, customers.size=${customers.size}, isRunning=$isRunning")
                 val customer = customers[currentIndex]
-                Log.d(TAG, "🔄 Processing customer $currentIndex/${customers.size}: ${customer.name} (${customer.phoneNumber})")
-                
-                Log.i(TAG, "📋 Processing customer ${currentIndex + 1}/${totalToSend}: ${customer.name} (${customer.phoneNumber})")
-                
-                val currentTime = System.currentTimeMillis()
-                Log.d(TAG, "🕐 Current time: ${currentTime}")
 
+                val currentTime = System.currentTimeMillis()
                 try {
 //                    // Cập nhật notification để giữ service trong foreground
 //                    notificationManager.notify(
@@ -442,14 +374,10 @@ class SmsService : Service() {
 //                    )
 
                     val message = formatMessage(templateContent, customer)
-                    Log.d(TAG, "🚀 Attempting to send SMS to ${customer.name} (${customer.phoneNumber})")
-                    Log.d(TAG, "📝 Message content: ${message.take(50)}${if (message.length > 50) "..." else ""}")
 
                     // Kiểm tra xem có nên gửi song song 2 khách hàng vào 2 SIM không
                     if (shouldSendParallel) {
-                        Log.d(TAG, "🔄 PARALLEL MODE: Gửi song song 2 khách hàng vào 2 SIM")
                         val (sim1, sim2) = smsRepository.getDualSimIds()
-                        Log.d(TAG, "🔄 Customer $currentIndex → SIM ${if (currentIndex % 2 == 0) sim1 else sim2} (SIM1: $sim1, SIM2: $sim2)")
                     }
 
                     // Sử dụng phương thức gửi SMS với delivery report để có thể theo dõi trạng thái
@@ -459,9 +387,6 @@ class SmsService : Service() {
                     // Debug dual SIM
                     if (smsRepository.isDualSimEnabled()) {
                         val (sim1, sim2) = smsRepository.getDualSimIds()
-                        Log.d(TAG, "🔄 Dual SIM: Customer $currentIndex → SIM $selectedSim (SIM1: $sim1, SIM2: $sim2)")
-                    } else {
-                        Log.d(TAG, "📱 Single SIM: Customer $currentIndex → SIM $selectedSim")
                     }
 
                     var success = false
@@ -470,17 +395,14 @@ class SmsService : Service() {
                     while (!success && retryCount < maxRetryAttempts && totalRetries < maxTotalRetries && isRunning) {
                         try {
                             if (retryCount > 0) {
-                                Log.d(TAG, "Retry attempt $retryCount for ${customer.phoneNumber}")
                                 delay(retryDelaySeconds * 1000L)
                             }
 
                             if (shouldSendParallel && currentIndex < customers.size - 1) {
-                                // Gửi song song 2 khách hàng vào 2 SIM bằng coroutine song song
                                 val nextCustomer = customers[currentIndex + 1]
                                 val nextMessage = formatMessage(templateContent, nextCustomer)
                                 val (sim1, sim2) = smsRepository.getDualSimIds()
 
-                                Log.d(TAG, "🔄 Sending parallel: Customer $currentIndex to SIM $sim1, Customer ${currentIndex + 1} to SIM $sim2")
 
                                 val results = coroutineScope {
                                     val job1 = async { sendSmsWithDeliveryReport(customer.phoneNumber, message, sim1, customer) }
@@ -492,37 +414,28 @@ class SmsService : Service() {
 
                                 if (success1) {
                                     deleteCustomerAfterSuccessfulSend(customer)
-                                    val updatedCount1 = smsRepository.incrementSmsCount(sim1)
                                     val forceUpdatedCount1 = smsRepository.forceRefreshSmsCount(sim1)
-                                    Log.d(TAG, "📊 Updated SMS count for SIM $sim1: $forceUpdatedCount1/40")
                                     sendSmsCountUpdateBroadcast(sim1, forceUpdatedCount1)
                                 }
                                 if (success2) {
                                     deleteCustomerAfterSuccessfulSend(nextCustomer)
-                                    val updatedCount2 = smsRepository.incrementSmsCount(sim2)
                                     val forceUpdatedCount2 = smsRepository.forceRefreshSmsCount(sim2)
-                                    Log.d(TAG, "📊 Updated SMS count for SIM $sim2: $forceUpdatedCount2/40")
                                     sendSmsCountUpdateBroadcast(sim2, forceUpdatedCount2)
                                 }
-                                // Nếu cả 2 thành công thì bỏ qua khách tiếp theo
+
                                 if (success) {
-                                    currentIndex += 2  // Tăng 2 vì đã xử lý 2 khách hàng
-                                    Log.d(TAG, "✅ Parallel send successful, processed 2 customers, next index: $currentIndex")
-                                } else {
-                                    Log.d(TAG, "❌ Parallel send failed, will retry current customer")
+                                    currentIndex += 2
                                 }
+
                             } else {
-                                // Gửi thông thường 1 khách hàng
                                 success = sendSmsWithDeliveryReport(customer.phoneNumber, message, selectedSim, customer)
                             }
 
                             if (!success) {
                                 retryCount++
                                 totalRetries++
-                                Log.d(TAG, "SMS sending failed, retry $retryCount/$maxRetryAttempts")
                             }
                         } catch (e: Exception) {
-                            Log.e(TAG, "❌ Exception during SMS sending to ${customer.phoneNumber}: ${e.message}", e)
                             retryCount++
                             totalRetries++
                             delay(retryDelaySeconds * 1000L)
@@ -541,30 +454,20 @@ class SmsService : Service() {
                         if (shouldSendParallel && currentIndex < customers.size - 1) {
                             // Đã xử lý song song 2 khách hàng
                             totalSent += 2
-                            Log.d(TAG, "✅ Parallel processing completed for 2 customers")
-                            Log.d(TAG, "✅ Parallel SMS sent successfully")
-                            Log.d(TAG, "📋 Success recorded, will broadcast AFTER delay period (${intervalSeconds}s)")
                         } else {
                             // Xử lý thông thường 1 khách hàng
                             totalSent++
-                            Log.d(TAG, "✅ Customer ${customer.name} processed successfully")
-
                             // Xóa khách hàng khỏi danh sách UI sau khi gửi thành công
                             deleteCustomerAfterSuccessfulSend(customer)
 
-                            Log.d(TAG, "✅ SMS sent successfully to ${customer.name}")
-                            Log.d(TAG, "📋 Success recorded, will broadcast AFTER delay period (${intervalSeconds}s)")
 
                             // Tăng số lượng SMS đã gửi trong ngày (chỉ cho single SIM mode)
                             val updatedCount = smsRepository.incrementSmsCount(selectedSim)
                             val forceUpdatedCount = smsRepository.forceRefreshSmsCount(selectedSim)
-                            Log.d(TAG, "📊 Updated SMS count for SIM $selectedSim: $forceUpdatedCount/40, increment success: $updatedCount")
 
                             // Send broadcast to update UI with new SMS count
                             sendSmsCountUpdateBroadcast(selectedSim, forceUpdatedCount)
                         }
-
-                        Log.d(TAG, "✅ SMS sent successfully to ${customer.name} (${customer.phoneNumber})")
 
                         // Kiểm tra xem đây có phải là khách hàng cuối cùng không
                         val isLastCustomer = if (shouldSendParallel && currentIndex < customers.size - 1) {
@@ -595,8 +498,6 @@ class SmsService : Service() {
                             }
 
                             val randomDelay = getRandomDelay(effectiveInterval)
-                            Log.d(TAG, "⏳ Waiting ${randomDelay}ms (${randomDelay/1000}s) before next SMS...")
-                            Log.d(TAG, "⏳ Interval setting: ${intervalSeconds}s (effective: ${effectiveInterval}s, dual SIM: ${smsRepository.isDualSimEnabled()}, parallel: $shouldSendParallel)")
 
                             // Chỉ delay nếu không phải parallel mode
                             if (effectiveInterval > 0) {
@@ -620,19 +521,6 @@ class SmsService : Service() {
                                     val totalRemainingSeconds = remainingSecs + ((remainingCustomers - 1) * intervalSeconds)
                                     val totalRemainingMinutes = totalRemainingSeconds / 60
                                     val totalRemainingSecsDisplay = totalRemainingSeconds % 60
-
-                                    // Hiển thị thông tin chi tiết hơn trong notification
-                                    val notificationMessage = if (nextCustomerIndex < customers.size) {
-                                        val nextCustomer = customers[nextCustomerIndex]
-                                        "Đã gửi $totalSent/$totalToSend tin nhắn. Còn lại: ${remainingSecs}s trước khi gửi cho ${nextCustomer.name}"
-                                    } else {
-                                        "Đã gửi $totalSent/$totalToSend tin nhắn. Còn lại: ${remainingSecs}s..."
-                                    }
-//
-//                                    notificationManager.notify(
-//                                        NOTIFICATION_ID,
-//                                        createNotification(notificationMessage)
-//                                    )
 
                                     // Cập nhật UI thông qua broadcast với tổng thời gian còn lại
                                     val progressMessage = if (shouldSendParallel && nextCustomerIndex < customers.size - 1) {
@@ -688,12 +576,6 @@ class SmsService : Service() {
                             )
                         }
                     } else {
-                        Log.e(TAG, "❌ Failed to send SMS to ${customer.name} (${customer.phoneNumber}) after $retryCount retries")
-                        
-                        // KHÔNG DỪNG SERVICE - Chỉ log lỗi và tiếp tục với khách hàng tiếp theo
-                        Log.w(TAG, "⚠️ SMS failed for ${customer.name}, continuing with next customer")
-                        
-                        Log.w(TAG, "❌ Failed to send SMS to ${customer.name} after $retryCount attempts")
 
                         val failureMessage = if (shouldSendParallel && currentIndex < customers.size - 1) {
                             val nextCustomer = customers[currentIndex + 1]
@@ -850,31 +732,16 @@ class SmsService : Service() {
             val extraCleanedPhone = phoneNumber.trim()
                 .replace(Regex("[^0-9+]"), "") // Remove non-digits
                 .let { num ->
-                    // Special formatting for Vietnamese carrier numbers
-                    when {
-                        // Viettel numbers (038x) - có thể có vấn đề với một số đầu số
-                        num.startsWith("038") -> {
-                            Log.d(TAG, "🔧 Detected Viettel 038 number, applying special handling")
-                            "+84" + num.substring(1)
-                        }
-                        // Mobifone numbers có thể gặp vấn đề
-                        num.startsWith("070") || num.startsWith("076") || num.startsWith("077") || 
-                        num.startsWith("078") || num.startsWith("079") -> {
-                            Log.d(TAG, "🔧 Detected Mobifone number, applying special handling")
-                            "+84" + num.substring(1)
-                        }
-                        // Vinaphone numbers
-                        num.startsWith("081") || num.startsWith("082") || num.startsWith("083") || 
-                        num.startsWith("084") || num.startsWith("085") -> {
-                            Log.d(TAG, "🔧 Detected Vinaphone number, applying special handling")
-                            "+84" + num.substring(1)
-                        }
-                        // Problematic prefixes - force international format
-                        num.startsWith("0946") || num.startsWith("0167") -> {
-                            Log.d(TAG, "🔧 Detected problematic prefix, forcing international format")
-                            "+84" + num.substring(1)
-                        }
-                        else -> num
+                    // Luôn giữ định dạng 0xxx, không chuyển sang +84
+                    if (num.startsWith("+84")) {
+                        // Chuyển +84 về 0
+                        "0" + num.substring(3)
+                    } else if (num.startsWith("84") && num.length >= 11) {
+                        // Chuyển 84 về 0
+                        "0" + num.substring(2)
+                    } else {
+                        // Giữ nguyên định dạng 0xxx
+                        num
                     }
                 }
             
@@ -907,13 +774,23 @@ class SmsService : Service() {
             // Always add default manager as fallback
             smsManagers.add(SmsManager.getDefault())
             
-            // Try different phone number formats
+            // Chỉ sử dụng định dạng 0xxx, không thử +84
             val phoneFormats = listOf(
-                extraCleanedPhone,
-                phoneNumber.trim(), // Original format
-                if (extraCleanedPhone.startsWith("+84")) extraCleanedPhone.replace("+84", "0") else "+84" + extraCleanedPhone.substring(1)
-            ).distinct()
+                extraCleanedPhone, // Đã được clean và đảm bảo định dạng 0xxx
+                phoneNumber.trim().let { original ->
+                    // Đảm bảo original cũng ở định dạng 0xxx
+                    if (original.startsWith("+84")) {
+                        "0" + original.substring(3)
+                    } else if (original.startsWith("84") && original.length >= 11) {
+                        "0" + original.substring(2)
+                    } else {
+                        original
+                    }
+                }
+            ).distinct().filter { it.startsWith("0") } // Chỉ giữ số bắt đầu bằng 0
             
+            Log.d(TAG, "🚀 Sending SMS to: $phoneNumber → $extraCleanedPhone")
+            Log.d(TAG, "📱 Phone formats to try: $phoneFormats")
             Log.d(TAG, "📱 Will try ${smsManagers.size} managers with ${phoneFormats.size} formats = ${smsManagers.size * phoneFormats.size} total attempts")
             
             // Create all attempts
@@ -1296,52 +1173,6 @@ class SmsService : Service() {
     }
 
 
-    private fun createNotification(message: String): android.app.Notification {
-        createNotificationChannel()
-
-        val notificationIntent = Intent(this, com.example.sms_app.presentation.activity.MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-
-        val pendingIntentFlags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-
-        val pendingIntent = PendingIntent.getActivity(
-            this,
-            0,
-            notificationIntent,
-            pendingIntentFlags
-        )
-
-        // Thêm action dừng dịch vụ
-        val stopIntent = Intent(this, SmsService::class.java).apply {
-            action = "STOP_SMS_SERVICE"
-        }
-
-        val stopPendingIntent = PendingIntent.getService(
-            this,
-            1,
-            stopIntent,
-            pendingIntentFlags
-        )
-
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Dịch vụ gửi SMS")
-            .setContentText(message)
-            .setSmallIcon(R.drawable.ic_sms_launcher)
-            .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_MAX) // Mức độ ưu tiên cao nhất
-            .setCategory(NotificationCompat.CATEGORY_SERVICE) // Đánh dấu là service notification
-            .setOngoing(true) // Không cho phép người dùng xóa notification
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC) // Hiển thị trên màn hình khóa
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Dừng gửi", stopPendingIntent)
-            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE) // Hiển thị ngay lập tức
-            .build()
-    }
-
     private fun createHiddenNotification(): android.app.Notification {
         createNotificationChannel()
 
@@ -1403,12 +1234,6 @@ class SmsService : Service() {
             putExtra(EXTRA_MESSAGE, message)
         }
         sendBroadcast(intent)
-
-        // Cập nhật notification với thông tin chi tiết hơn
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        // Sử dụng message đã được định dạng từ bên ngoài
-        // notificationManager.notify(NOTIFICATION_ID, createNotification(message))
     }
 
     private fun sendCompletionBroadcast(message: String) {
@@ -1520,24 +1345,8 @@ class SmsService : Service() {
                                 } catch (e: Exception) {
                                     "Error getting SIM state: ${e.message}"
                                 }
-                                
-                                val phoneValidation = phoneNumber.validateAndFormatPhoneNumber()
-                                
-                                Log.e(TAG, """
-🔍 DETAILED ERROR INFO (Attempt $attemptCount/$maxAttempts):
-📱 Phone: $requestId
-👤 Customer: $customerName
-☎️ Phone Number: $phoneNumber
-✓ Phone Format: ${if (phoneValidation == phoneNumber) "Valid" else "Modified"}
-📞 Formatted: $phoneValidation
-💳 Using SIM: ${intent.getIntExtra("SIM_ID", -1)}
-📶 Network: $networkOperator
-🔋 Battery saver: ${(getSystemService(Context.POWER_SERVICE) as android.os.PowerManager).isPowerSaveMode}
-💾 Available storage: ${android.os.StatFs(filesDir.path).availableBytes / 1024 / 1024} MB
-📡 SIM State: $simState
-🔧 Manager Index: $managerIndex
-""")
-                                
+
+
                                 // Check if there are more attempts to try
                                 val queue = attemptQueue[requestId]
                                 if (queue != null && queue.isNotEmpty()) {
@@ -1861,59 +1670,4 @@ class SmsService : Service() {
         sendBroadcast(intent)
     }
 
-    private fun isPowerSaveMode(): Boolean {
-        return try {
-            val powerManager = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
-                powerManager.isPowerSaveMode
-            } else {
-                false
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking power save mode", e)
-            false
-        }
-    }
-
-    private fun getAvailableStorage(): Long {
-        return try {
-            val path = applicationContext.filesDir.absolutePath
-            val stat = android.os.StatFs(path)
-            val blockSize = stat.blockSizeLong
-            val availableBlocks = stat.availableBlocksLong
-            (availableBlocks * blockSize) / (1024 * 1024) // Return in MB
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking available storage", e)
-            -1
-        }
-    }
-
-    // Add this helper method for logging exception details
-    private fun logSmsException(e: Exception, phoneNumber: String, operation: String) {
-        val sb = StringBuilder()
-        sb.append(e.printStackTrace())
-        sb.append("\n📛 SMS EXCEPTION DETAILS:")
-        sb.append("\n🔧 Operation: $operation")
-        sb.append("\n📱 Phone Number: $phoneNumber")
-        sb.append("\n💥 Exception: ${e.javaClass.name}")
-        sb.append("\n💬 Message: ${e.message}")
-
-        // Check phone number format
-        val isValidFormat = phoneNumber.isValidPhoneNumber()
-        val formattedNumber = phoneNumber.validateAndFormatPhoneNumber()
-        sb.append("\n☎️ Phone Format Valid: $isValidFormat")
-        sb.append("\n📞 Formatted Number: $formattedNumber")
-
-        // Include SIM info
-        val selectedSim = smsRepository.getSelectedSim()
-        sb.append("\n💳 SIM: $selectedSim")
-
-        // Add stack trace
-        val stackTrace = e.stackTraceToString()
-        // Limit stack trace to first 15 lines to avoid excessive logging
-        val limitedStackTrace = stackTrace.lines().take(15).joinToString("\n")
-        sb.append("\n📚 Stack Trace (first 15 lines):\n$limitedStackTrace")
-
-        Log.e(TAG, sb.toString())
-    }
 } 

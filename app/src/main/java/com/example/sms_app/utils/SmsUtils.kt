@@ -592,16 +592,11 @@ fun sendSmsToVietnameseNumber(
     // First clean the number
     val cleanedNumber = phoneNumber.validateAndFormatPhoneNumber()
 
-    // Try different formats in order of likelihood to succeed
+    // Chỉ sử dụng định dạng 0xxx, không thử +84
     val formatsToTry = mutableListOf<String>()
 
-    // Format 1: Standard domestic format (most common)
+    // Chỉ sử dụng định dạng domestic 0xxx
     formatsToTry.add(cleanedNumber)
-
-    // Format 2: International format with +84
-    if (cleanedNumber.startsWith("0")) {
-        formatsToTry.add("+84${cleanedNumber.substring(1)}")
-    }
 
     // Format 3: International format without +
     if (cleanedNumber.startsWith("0")) {
