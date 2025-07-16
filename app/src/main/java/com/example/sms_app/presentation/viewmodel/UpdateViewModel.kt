@@ -74,14 +74,12 @@ class UpdateViewModel @Inject constructor(
                     Timber.d("📥 Download progress: ${(progress * 100).toInt()}%")
                 }
 
-                if (success) {
-                    Timber.d("✅ Update download successful")
-                    // The app will close and update process will begin
-                } else {
-                    Timber.e("❌ Update download failed")
-                    _isDownloading.value = false
-                    _downloadProgress.value = 0f
-                }
+                // Sau khi download xong, luôn ẩn dialog và reset state
+                // Bất kể success hay false, vì false có nghĩa là đã mở trình cài đặt
+                Timber.d("✅ Download completed, installer opened")
+                _isDownloading.value = false
+                _downloadProgress.value = 0f
+                _showUpdateDialog.value = false // Ẩn dialog sau khi mở installer
             } catch (e: Exception) {
                 Timber.e(e, "❌ Error during update")
                 _isDownloading.value = false

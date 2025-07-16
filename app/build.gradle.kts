@@ -24,6 +24,10 @@ android {
         versionCode = 1
         versionName = "1.0.0"
 
+        // Thêm thông tin build để debug
+        buildConfigField("int", "VERSION_CODE", "$versionCode")
+        buildConfigField("String", "BUILD_DATE", "\"$buildDate\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
             useSupportLibrary = true
@@ -61,6 +65,7 @@ android {
         
         debug {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release") // Sử dụng cùng signing với release
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

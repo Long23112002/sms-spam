@@ -31,6 +31,7 @@ class AppUpdateManager @Inject constructor(
         private const val BASE_URL = "http://42.96.16.211:6868/"
         private const val CURRENT_VERSION = "1.0.0"
         private const val CURRENT_VERSION_CODE = 1
+        private const val TIMEOUT_SECONDS = 10L
     }
 
     private val apiService: UpdateApiService by lazy {
@@ -79,7 +80,16 @@ class AppUpdateManager @Inject constructor(
                     Timber.d("📱 Current version: $currentVersionName ($currentVersionCode)")
                     Timber.d("🆕 Latest version: ${versionResponse.version} (${versionResponse.versionCode})")
 
-                    if (versionResponse.versionCode > currentVersionCode) {
+                    val isVersionNewer = isNewerVersion(versionResponse.version, currentVersionName)
+                    val isVersionCodeNewer = versionResponse.versionCode > currentVersionCode
+                    Timber.d("🔍 Version comparison details:")
+                    Timber.d("   Server version: ${versionResponse.version} (code: ${versionResponse.versionCode})")
+                    Timber.d("   Current version: $currentVersionName (code: $currentVersionCode)")
+                    Timber.d("   Version string newer: $isVersionNewer")
+                    Timber.d("   Version code newer: $isVersionCodeNewer")
+                    Timber.d("   Final result: ${isVersionNewer || isVersionCodeNewer}")
+
+                    if (isVersionNewer || isVersionCodeNewer) {
                         Timber.d("✅ Update available!")
                         Toast.makeText(context, "🚀 Có cập nhật mới v${versionResponse.version}!", Toast.LENGTH_SHORT).show()
 
@@ -182,12 +192,12 @@ class AppUpdateManager @Inject constructor(
                         inputStream.close()
                     }
 
-                    Toast.makeText(context, "✅ Tải xuống hoàn thành! Đang cài đặt...", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "✅ Tải xuống hoàn thành! Đang mở trình cài đặt...", Toast.LENGTH_SHORT).show()
                     Timber.d("✅ Download completed: ${apkFile.absolutePath}")
 
-                    // Install APK
+                    // Install APK - trả về false vì quá trình cài đặt sẽ được xử lý bởi system
                     installApk(apkFile)
-                    true
+                    false // Không trả về true vì cài đặt chưa hoàn thành
                 } else {
                     Timber.e("❌ Download response body is null")
                     Toast.makeText(context, "❌ Lỗi tải xuống: Không nhận được dữ liệu", Toast.LENGTH_LONG).show()
@@ -216,24 +226,121 @@ class AppUpdateManager @Inject constructor(
     }
     
     private fun installApk(apkFile: File) {
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        apkFile
-                    )
+        try {
+            Timber.d("🔧 Starting APK installation: ${apkFile.absolutePath}")
+
+            // Kiểm tra file tồn tại
+            if (!apkFile.exists()) {
+                Timber.e("❌ APK file does not exist: ${apkFile.absolutePath}")
+                Toast.makeText(context, "❌ File APK không tồn tại", Toast.LENGTH_LONG).show()
+                return
+            }
+
+            // Kiểm tra permission cài đặt
+            if (!canInstallApk()) {
+                Timber.w("⚠️ No permission to install APK")
+                Toast.makeText(context, "⚠️ Cần cấp quyền cài đặt ứng dụng", Toast.LENGTH_LONG).show()
+                requestInstallPermission()
+                return
+            }
+
+            val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    apkFile
+                )
+            } else {
+                Uri.fromFile(apkFile)
+            }
+
+            Timber.d("🔧 APK URI: $uri")
+
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+
+            // Log thông tin APK để debug
+            Timber.d("🔍 APK info:")
+            Timber.d("   File size: ${apkFile.length()} bytes")
+            Timber.d("   File path: ${apkFile.absolutePath}")
+            Timber.d("   Current app version: ${getCurrentVersionName()} (${getCurrentVersionCode()})")
+
+            // Thêm thông tin chi tiết về APK
+            try {
+                val packageManager = context.packageManager
+                val packageInfo = packageManager.getPackageArchiveInfo(apkFile.absolutePath, 0)
+                if (packageInfo != null) {
+                    Timber.d("🔍 Downloaded APK info:")
+                    Timber.d("   Package name: ${packageInfo.packageName}")
+                    Timber.d("   Version name: ${packageInfo.versionName}")
+                    Timber.d("   Version code: ${if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) packageInfo.longVersionCode else packageInfo.versionCode}")
                 } else {
-                    Uri.fromFile(apkFile)
-                },
-                "application/vnd.android.package-archive"
-            )
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    Timber.e("❌ Cannot read APK package info - file may be corrupted")
+                    Toast.makeText(context, "❌ File APK bị lỗi", Toast.LENGTH_LONG).show()
+                    return
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "❌ Error reading APK info")
+                Toast.makeText(context, "❌ Không thể đọc thông tin APK", Toast.LENGTH_LONG).show()
+                return
+            }
+
+            // Thử cài đặt với method chính
+            val packageManager = context.packageManager
+            if (intent.resolveActivity(packageManager) != null) {
+                Timber.d("✅ Starting install activity with FileProvider")
+                context.startActivity(intent)
+                Toast.makeText(context, "📱 Đang mở trình cài đặt...", Toast.LENGTH_SHORT).show()
+            } else {
+                // Fallback: Thử với Uri.fromFile cho Android cũ
+                Timber.w("⚠️ FileProvider method failed, trying fallback...")
+                try {
+                    val fallbackIntent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(Uri.fromFile(apkFile), "application/vnd.android.package-archive")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+
+                    if (fallbackIntent.resolveActivity(packageManager) != null) {
+                        Timber.d("✅ Starting install with fallback method")
+                        context.startActivity(fallbackIntent)
+                        Toast.makeText(context, "📱 Đang mở trình cài đặt (fallback)...", Toast.LENGTH_SHORT).show()
+                    } else {
+                        Timber.e("❌ No activity found to handle install intent")
+                        Toast.makeText(context, "❌ Không tìm thấy trình cài đặt", Toast.LENGTH_LONG).show()
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "❌ Fallback install method failed")
+                    Toast.makeText(context, "❌ Không thể mở trình cài đặt", Toast.LENGTH_LONG).show()
+                }
+            }
+
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error installing APK")
+            Toast.makeText(context, "❌ Lỗi cài đặt: ${e.message}", Toast.LENGTH_LONG).show()
+
+            // Gợi ý uninstall và cài lại
+            Toast.makeText(context, "💡 Thử gỡ cài đặt app cũ và cài lại", Toast.LENGTH_LONG).show()
         }
-        
-        context.startActivity(intent)
+    }
+
+    /**
+     * Mở settings để uninstall app hiện tại
+     */
+    fun openUninstallSettings() {
+        try {
+            val intent = Intent(Intent.ACTION_DELETE).apply {
+                data = Uri.parse("package:${context.packageName}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+            Toast.makeText(context, "📱 Gỡ cài đặt app cũ, sau đó cài lại APK mới", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error opening uninstall settings")
+            Toast.makeText(context, "❌ Không thể mở cài đặt gỡ cài đặt", Toast.LENGTH_LONG).show()
+        }
     }
     
     private fun getCurrentVersionCode(): Int {
@@ -269,6 +376,25 @@ class AppUpdateManager @Inject constructor(
             context.packageManager.canRequestPackageInstalls()
         } else {
             true
+        }
+    }
+
+    /**
+     * Yêu cầu permission cài đặt APK
+     */
+    private fun requestInstallPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(intent)
+                Toast.makeText(context, "📱 Vui lòng bật 'Cho phép từ nguồn này' và thử lại", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Timber.e(e, "❌ Error requesting install permission")
+                Toast.makeText(context, "❌ Không thể mở cài đặt quyền", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -312,6 +438,42 @@ class AppUpdateManager @Inject constructor(
             Timber.e(e, "❌ API test failed")
             Toast.makeText(context, "❌ API test error: ${e.message}", Toast.LENGTH_LONG).show()
             false
+        }
+    }
+
+    /**
+     * So sánh version string để xem version mới có cao hơn version hiện tại không
+     * Ví dụ: "1.0.1" > "1.0.0" = true
+     */
+    private fun isNewerVersion(newVersion: String, currentVersion: String): Boolean {
+        try {
+            val newParts = newVersion.split(".").map { it.toIntOrNull() ?: 0 }
+            val currentParts = currentVersion.split(".").map { it.toIntOrNull() ?: 0 }
+
+            val maxLength = maxOf(newParts.size, currentParts.size)
+
+            for (i in 0 until maxLength) {
+                val newPart = newParts.getOrNull(i) ?: 0
+                val currentPart = currentParts.getOrNull(i) ?: 0
+
+                when {
+                    newPart > currentPart -> {
+                        Timber.d("🔍 Version comparison: $newVersion > $currentVersion (part $i: $newPart > $currentPart)")
+                        return true
+                    }
+                    newPart < currentPart -> {
+                        Timber.d("🔍 Version comparison: $newVersion < $currentVersion (part $i: $newPart < $currentPart)")
+                        return false
+                    }
+                    // newPart == currentPart, continue to next part
+                }
+            }
+
+            Timber.d("🔍 Version comparison: $newVersion == $currentVersion")
+            return false
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error comparing versions: $newVersion vs $currentVersion")
+            return false
         }
     }
 }
