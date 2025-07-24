@@ -5,7 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,7 +78,6 @@ fun SelectSimDialog(
     var selectedSim by remember { mutableStateOf(SimInfo()) }
     selectedSim = availableSims.firstOrNull { it.subscriptionId == selectedSimId } ?: availableSims.first()
 
-    // State cho checkbox SIM selection
     var checkedSims by remember { mutableStateOf(setOf(availableSims.firstOrNull()?.subscriptionId ?: -1)) }
 
     LaunchedEffect(template, default) {
@@ -85,42 +86,34 @@ fun SelectSimDialog(
         }.getOrDefault(TemplateManager.getDefaultTemplates().first())
     }
 
-
     AlertDialog(
-        onDismissRequest = {
-            onDismissRequest()
-        },
-        icon = {
-            Icon(Icons.Default.SimCard, null)
-        },
-        title = {
-            Text("Chọn sim")
-        },
+        onDismissRequest = { onDismissRequest() },
+        icon = { Icon(Icons.Default.SimCard, null) },
+        title = { Text("Chọn sim") },
         text = {
             Column {
                 Text("Số lượng 1 | Mẫu tin 1")
+                Spacer(modifier = Modifier.height(8.dp))
+
                 ExposedDropdownMenuBox(
                     expanded = expanded,
-                    onExpandedChange = {
-                        expanded = !expanded
-                    },
+                    onExpandedChange = { expanded = !expanded },
                 ) {
                     TextField(
                         enabled = true,
                         readOnly = true,
-                        modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, true),
-                        value = "Mẫu ${selectId.id} - ${selectId.content}",
+                        modifier = Modifier
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable, true)
+                            .fillMaxWidth(),
+                        value = "Mẫu ${selectId.id} - ${selectId.content.take(30)}${if (selectId.content.length > 30) "..." else ""}",
                         onValueChange = {},
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-                        },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                         colors = ExposedDropdownMenuDefaults.textFieldColors(),
                     )
                     ExposedDropdownMenu(
-                        expanded,
-                        onDismissRequest = {
-                            expanded = false
-                        }
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false },
+                        modifier = Modifier.heightIn(max = 300.dp)
                     ) {
                         template.forEach {
                             DropdownMenuItem(
@@ -130,10 +123,15 @@ fun SelectSimDialog(
                                             Text("Mẫu ${it.id}")
                                         },
                                         supportingContent = {
-                                            Text(it.content)
+                                            Text(
+                                                it.content.take(50) + if (it.content.length > 50) "..." else "",
+                                                maxLines = 2,
+                                                fontSize = 12.sp
+                                            )
                                         }
                                     )
-                                }, onClick = {
+                                },
+                                onClick = {
                                     selectId = it
                                     expanded = false
                                 }
@@ -142,9 +140,11 @@ fun SelectSimDialog(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(12.dp))
                 HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
 
-                LazyColumn {
+                LazyColumn(modifier = Modifier.heightIn(max = 200.dp)) {
                     items(availableSims.size) { index ->
                         val sim = availableSims[index]
                         val simSlotIndex = sim.simSlotIndex + 1
@@ -165,14 +165,14 @@ fun SelectSimDialog(
                                     tint = if (isChecked) MaterialTheme.colorScheme.primary else Color.Gray
                                 )
                             },
-                            supportingContent = {
-                                Text("${sim.phoneNumber}".uppercase())
-                            },
                             headlineContent = {
                                 Text(
-                                    "SIM $simSlotIndex - ${sim.carrierName}".uppercase(),
+                                    "SIM $simSlotIndex - ${sim.carrierName.uppercase()}",
                                     style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
                                 )
+                            },
+                            supportingContent = {
+                                sim.phoneNumber?.let { Text(it.uppercase()) }
                             },
                             trailingContent = {
                                 Checkbox(
@@ -183,8 +183,6 @@ fun SelectSimDialog(
                                         } else {
                                             checkedSims - sim.subscriptionId
                                         }
-
-                                        // Cập nhật selectedSim cho single SIM mode
                                         if (checkedSims.isNotEmpty()) {
                                             selectedSim = availableSims.find { it.subscriptionId in checkedSims } ?: sim
                                         }
@@ -200,42 +198,35 @@ fun SelectSimDialog(
         confirmButton = {
             TextButton(onClick = {
                 val selectedSimsList = availableSims.filter { it.subscriptionId in checkedSims }
-
-                val simConfig = if (selectedSimsList.size >= 2) {
-                    // Dual SIM mode - khi chọn 2 SIM trở lên
-                    android.util.Log.d("SelectSimDialog", "🔄 Creating Dual SIM config with ${selectedSimsList.size} SIMs")
-                    selectedSimsList.forEachIndexed { index, sim ->
-                        android.util.Log.d("SelectSimDialog", "   SIM $index: ${sim.displayName} (slot ${sim.simSlotIndex}, id ${sim.subscriptionId})")
+                val simConfig = when {
+                    selectedSimsList.size >= 2 -> {
+                        SimConfig(
+                            isDualSim = true,
+                            primarySim = selectedSimsList[0],
+                            secondarySim = selectedSimsList.getOrNull(1),
+                            allSims = selectedSimsList
+                        )
                     }
-                    SimConfig(
-                        isDualSim = true,
-                        primarySim = selectedSimsList[0],
-                        secondarySim = selectedSimsList.getOrNull(1),
-                        allSims = selectedSimsList
-                    )
-                } else if (selectedSimsList.size == 1) {
-                    // Single SIM mode
-                    val sim = selectedSimsList[0]
-                    android.util.Log.d("SelectSimDialog", "📱 Creating Single SIM config: ${sim.displayName} (slot ${sim.simSlotIndex}, id ${sim.subscriptionId})")
-                    SimConfig(
-                        isDualSim = false,
-                        primarySim = sim,
-                        secondarySim = null,
-                        allSims = listOf(sim)
-                    )
-                } else {
-                    // Fallback - không có SIM nào được chọn
-                    android.util.Log.w("SelectSimDialog", "⚠️ No SIM selected, using first available")
-                    val firstSim = availableSims.firstOrNull() ?: SimInfo()
-                    SimConfig(
-                        isDualSim = false,
-                        primarySim = firstSim,
-                        secondarySim = null,
-                        allSims = listOf(firstSim)
-                    )
+                    selectedSimsList.size == 1 -> {
+                        val sim = selectedSimsList[0]
+                        SimConfig(
+                            isDualSim = false,
+                            primarySim = sim,
+                            secondarySim = null,
+                            allSims = listOf(sim)
+                        )
+                    }
+                    else -> {
+                        val fallback = availableSims.firstOrNull() ?: SimInfo()
+                        SimConfig(
+                            isDualSim = false,
+                            primarySim = fallback,
+                            secondarySim = null,
+                            allSims = listOf(fallback)
+                        )
+                    }
                 }
 
-                // Lưu thông tin để hiển thị dialog xác nhận
                 pendingMessageTemplate = selectId
                 pendingSimConfig = simConfig
                 showConfirmDialog = true
@@ -245,7 +236,6 @@ fun SelectSimDialog(
         }
     )
 
-    // Dialog xác nhận gửi tin nhắn
     if (showConfirmDialog && pendingMessageTemplate != null && pendingSimConfig != null) {
         val selectedCustomers = customers.filter { it.isSelected }
 
@@ -255,9 +245,7 @@ fun SelectSimDialog(
                 pendingMessageTemplate = null
                 pendingSimConfig = null
             },
-            title = {
-                Text("Xác nhận gửi tin nhắn")
-            },
+            title = { Text("Xác nhận gửi tin nhắn") },
             text = {
                 Column {
                     Text("Bạn có chắc chắn muốn gửi tin nhắn đến:")
@@ -269,32 +257,28 @@ fun SelectSimDialog(
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "Mẫu tin: ${pendingMessageTemplate!!.content}",
+                        text = "Mẫu tin: ${pendingMessageTemplate!!.content.take(100)}${if (pendingMessageTemplate!!.content.length > 100) "..." else ""}",
                         fontSize = 12.sp,
                         color = Color.Gray
                     )
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        onSend(pendingMessageTemplate!!, pendingSimConfig!!)
-                        showConfirmDialog = false
-                        pendingMessageTemplate = null
-                        pendingSimConfig = null
-                    }
-                ) {
+                TextButton(onClick = {
+                    onSend(pendingMessageTemplate!!, pendingSimConfig!!)
+                    showConfirmDialog = false
+                    pendingMessageTemplate = null
+                    pendingSimConfig = null
+                }) {
                     Text("Đồng ý gửi", color = Color.Blue)
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = {
-                        showConfirmDialog = false
-                        pendingMessageTemplate = null
-                        pendingSimConfig = null
-                    }
-                ) {
+                TextButton(onClick = {
+                    showConfirmDialog = false
+                    pendingMessageTemplate = null
+                    pendingSimConfig = null
+                }) {
                     Text("Hủy")
                 }
             }
