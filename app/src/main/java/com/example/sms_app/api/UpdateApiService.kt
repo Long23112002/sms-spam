@@ -1,5 +1,6 @@
 package com.example.sms_app.api
 
+import androidx.annotation.Keep
 import okhttp3.ResponseBody
 import retrofit2.Response
 import retrofit2.http.GET
@@ -8,6 +9,7 @@ import retrofit2.http.Streaming
 /**
  * API service cho việc kiểm tra và tải xuống cập nhật app
  */
+@Keep
 interface UpdateApiService {
     
     /**
@@ -29,6 +31,7 @@ interface UpdateApiService {
 /**
  * Response model cho API version
  */
+@Keep
 data class VersionResponse(
     val version: String = "1.0.0",
     val versionCode: Int = 1,

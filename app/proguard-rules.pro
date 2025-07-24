@@ -257,3 +257,39 @@
 # Bật optimization và shrinking cho release build
 # -dontoptimize
 # -dontshrink
+
+# Temporary fix for AppUpdateManager
+-keep class com.example.sms_app.utils.AppUpdateManager { *; }
+-keep class com.example.sms_app.utils.AppUpdateManager$* { *; }
+
+# Retrofit
+-dontwarn retrofit2.**
+-keep class retrofit2.** { *; }
+-keepattributes Signature
+-keepattributes Exceptions
+
+# Gson
+-keepattributes Signature
+-keepattributes *Annotation*
+-dontwarn sun.misc.**
+-keep class com.google.gson.** { *; }
+-keep class * implements com.google.gson.TypeAdapterFactory
+-keep class * implements com.google.gson.JsonSerializer
+-keep class * implements com.google.gson.JsonDeserializer
+
+# Keep API models
+-keep class com.example.sms_app.api.** { *; }
+-keep class com.example.sms_app.utils.AppUpdateManager$UpdateInfo { *; }
+
+# OkHttp
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keep class okhttp3.** { *; }
+-keep interface okhttp3.** { *; }
+
+# Generic signatures for Retrofit
+-keepattributes Signature, InnerClasses, EnclosingMethod
+-keepclassmembers,allowshrinking,allowobfuscation interface * {
+    @retrofit2.http.* <methods>;
+}
+-keep,allowobfuscation,allowshrinking class kotlin.coroutines.Continuation

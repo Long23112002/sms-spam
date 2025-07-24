@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
+import androidx.annotation.Keep
 import androidx.core.content.FileProvider
 import com.example.sms_app.api.UpdateApiService
 import com.example.sms_app.api.VersionResponse
@@ -51,6 +52,7 @@ class AppUpdateManager @Inject constructor(
             .create(UpdateApiService::class.java)
     }
     
+    @Keep
     data class UpdateInfo(
         val versionCode: Int = 0,
         val versionName: String = "",

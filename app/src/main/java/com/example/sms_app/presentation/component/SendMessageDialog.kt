@@ -372,15 +372,15 @@ fun SendMessageDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                // Tắt keep screen on khi đóng dialog
-                if (context is android.app.Activity) {
-                    context.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-                }
-                onDismissRequest()
-            }) {
-                Text("Đóng")
-            }
+//            TextButton(onClick = {
+//                // Tắt keep screen on khi đóng dialog
+//                if (context is android.app.Activity) {
+//                    context.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+//                }
+//                onDismissRequest()
+//            }) {
+////                Text("Đóng")
+//            }
         },
         dismissButton = {
             // Chỉ hiển thị nút dừng khi đang gửi
