@@ -24,6 +24,7 @@ import com.example.sms_app.data.Customer
 import com.example.sms_app.data.SmsRepository
 import kotlinx.coroutines.*
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.coroutineScope
 import com.example.sms_app.presentation.activity.MainActivity
 import com.example.sms_app.data.SmsTemplate
 import android.os.Handler
@@ -61,6 +62,11 @@ class SmsService : Service() {
         const val NOTIFICATION_ID = 1
         const val CHANNEL_ID = "SmsServiceChannel"
         const val NOTIFICATION_CHANNEL_ID = "SmsServiceChannel"
+        
+        // Error message constants
+        private const val ERROR_NO_CUSTOMERS = "Bạn chưa chọn khách hàng nào để gửi."
+        private const val ERROR_NO_SIM = "Thiết bị chưa lắp SIM, vui lòng kiểm tra lại."
+        private const val ERROR_RETRY_FAILED = "Gửi tới khách hàng %s thất bại sau %d lần thử."
 
         const val ACTION_PROGRESS_UPDATE = "com.example.sms_app.ACTION_PROGRESS_UPDATE"
         const val ACTION_SMS_COMPLETED = "com.example.sms_app.ACTION_SMS_COMPLETED"
@@ -226,11 +232,59 @@ class SmsService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    @SuppressLint("MissingPermission")
+    private fun checkSimAndCustomers(): Pair<Boolean, String> {
+        try {
+            // Kiểm tra SIM
+            val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
+            val subscriptionManager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+            
+            // Kiểm tra xem có SIM nào được lắp không
+            val simState = telephonyManager.simState
+            if (simState == TelephonyManager.SIM_STATE_ABSENT) {
+                return Pair(false, "Thiết bị chưa lắp SIM, vui lòng kiểm tra lại")
+            }
+
+            // Kiểm tra xem có SIM nào hoạt động không
+            val activeSubscriptions = subscriptionManager.activeSubscriptionInfoList
+            if (activeSubscriptions.isNullOrEmpty()) {
+                return Pair(false, "Không tìm thấy SIM nào đang hoạt động")
+            }
+
+            // Kiểm tra trạng thái SIM
+            if (simState != TelephonyManager.SIM_STATE_READY) {
+                return Pair(false, "SIM chưa sẵn sàng, trạng thái: $simState")
+            }
+
+            // Kiểm tra danh sách khách hàng
+            val customers = smsRepository.getCustomers()
+            val selectedCustomers = customers.filter { it.isSelected }
+            
+            if (selectedCustomers.isEmpty()) {
+                return Pair(false, "Bạn chưa chọn khách hàng nào để gửi")
+            }
+
+            return Pair(true, "OK")
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Lỗi kiểm tra SIM và danh sách khách hàng: ${e.message}")
+            return Pair(false, "Lỗi kiểm tra: ${e.message}")
+        }
+    }
+
     @RequiresPermission(Manifest.permission.READ_PHONE_STATE)
     private fun startSendingSms() {
         try {
             if (isRunning) {
                 Log.w(TAG, "⚠️ SMS service is already running, ignoring new start request")
+                return
+            }
+
+            // Kiểm tra SIM và danh sách khách hàng trước khi bắt đầu
+            val (isValid, message) = checkSimAndCustomers()
+            if (!isValid) {
+                Log.e(TAG, "❌ Không thể bắt đầu gửi SMS: $message")
+                sendCompletionBroadcast(message)
+                stopSelf()
                 return
             }
 
@@ -395,7 +449,15 @@ class SmsService : Service() {
                     while (!success && retryCount < maxRetryAttempts && totalRetries < maxTotalRetries && isRunning) {
                         try {
                             if (retryCount > 0) {
+                                Log.d(TAG, "↻ Thử lại lần ${retryCount + 1}/${maxRetryAttempts} cho ${customer.name}")
                                 delay(retryDelaySeconds * 1000L)
+                            }
+
+                            // Nếu đây là lần retry cuối cùng mà vẫn thất bại, dừng toàn bộ quá trình
+                            if (retryCount == maxRetryAttempts - 1) {
+                                Log.e(TAG, "❌ Đã hết số lần thử cho ${customer.name}")
+                                handleSendFailure(customer, maxRetryAttempts)
+                                return@sendSmsToCustomers // Thoát khỏi toàn bộ quá trình gửi
                             }
 
                             if (shouldSendParallel && currentIndex < customers.size - 1) {
@@ -434,10 +496,24 @@ class SmsService : Service() {
                             if (!success) {
                                 retryCount++
                                 totalRetries++
+                                
+                                // Nếu đã hết số lần thử, dừng ngay
+                                if (retryCount >= maxRetryAttempts) {
+                                    Log.e(TAG, "❌ Thất bại sau ${retryCount} lần thử cho ${customer.name}")
+                                    handleSendFailure(customer, retryCount)
+                                    return@sendSmsToCustomers
+                                }
                             }
                         } catch (e: Exception) {
+                            Log.e(TAG, "❌ Lỗi khi gửi SMS: ${e.message}")
                             retryCount++
                             totalRetries++
+                            
+                            // Nếu exception xảy ra và đã hết số lần thử, dừng ngay
+                            if (retryCount >= maxRetryAttempts) {
+                                handleSendFailure(customer, retryCount, e.message)
+                                return@sendSmsToCustomers
+                            }
                             delay(retryDelaySeconds * 1000L)
                         }
                     }
@@ -627,9 +703,12 @@ class SmsService : Service() {
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "💥 Error processing customer ${customer.name} (${customer.phoneNumber})", e)
-
-                    // KHÔNG DỪNG SERVICE - Chỉ log lỗi và tiếp tục với khách hàng tiếp theo
-                    Log.w(TAG, "⚠️ Exception for ${customer.name}, continuing with next customer")
+                    
+                    // Dừng ngay khi có lỗi và gửi thông báo lỗi
+                    val errorMsg = "Lỗi gửi SMS cho ${customer.name}: ${e.message}"
+                    Log.e(TAG, errorMsg)
+                    handleSendFailure(customer, maxRetryAttempts, errorMsg)
+                    return@sendSmsToCustomers // Thoát khỏi hàm sendSmsToCustomers ngay lập tức
                     
                     Log.e(TAG, "💥 Processing error for ${customer.name}: ${e.message}")
 
@@ -719,140 +798,170 @@ class SmsService : Service() {
         }
     }
 
+    private suspend fun handleSendFailure(customer: Customer, attempts: Int, error: String? = null) {
+        val errorMessage = if (error != null) {
+            "Lỗi gửi tới ${customer.name}: $error (sau $attempts lần thử)"
+        } else {
+            String.format(ERROR_RETRY_FAILED, customer.name, attempts)
+        }
+        Log.e(TAG, "❌ $errorMessage")
+        
+        // Dừng toàn bộ tiến trình gửi
+        isRunning = false
+        
+        // Gửi thông báo lỗi
+        sendCompletionBroadcast(errorMessage)
+        
+        // Dừng service
+        stopSelf()
+        
+        // Hủy tất cả coroutine đang chạy
+        serviceJob?.cancel()
+        
+        // Clear tất cả pending operations
+        pendingSmsResults.values.forEach { it.cancel() }
+        pendingSmsResults.clear()
+        pendingSmsDeliveries.clear()
+        multipartMessageTracker.clear()
+    }
+
     private suspend fun sendSmsWithDeliveryReport(
         phoneNumber: String,
         message: String,
         selectedSim: Int,
         customer: Customer
-    ): Boolean = suspendCancellableCoroutine { continuation ->
-        try {
-            val requestId = "SMS_${System.currentTimeMillis()}_${phoneNumber.hashCode()}"
-            
-            // Apply deep cleaning for problematic numbers before sending
-            val extraCleanedPhone = phoneNumber.trim()
-                .replace(Regex("[^0-9+]"), "") // Remove non-digits
-                .let { num ->
-                    // Luôn giữ định dạng 0xxx, không chuyển sang +84
-                    if (num.startsWith("+84")) {
-                        // Chuyển +84 về 0
-                        "0" + num.substring(3)
-                    } else if (num.startsWith("84") && num.length >= 11) {
-                        // Chuyển 84 về 0
-                        "0" + num.substring(2)
-                    } else {
-                        // Giữ nguyên định dạng 0xxx
-                        num
+    ): Boolean {
+        // Kiểm tra SIM trước, nếu lỗi thì xử lý thất bại luôn (bên ngoài suspendCancellableCoroutine)
+        val (isValid, errorMessage) = checkSimAndCustomers()
+        if (!isValid) {
+            Log.e(TAG, "❌ Không thể gửi SMS: $errorMessage")
+            handleSendFailure(customer, 0, errorMessage)
+            return false
+        }
+
+        return suspendCancellableCoroutine { continuation ->
+            try {
+                val requestId = "SMS_${System.currentTimeMillis()}_${phoneNumber.hashCode()}"
+
+                val extraCleanedPhone = phoneNumber.trim()
+                    .replace(Regex("[^0-9+]"), "") // Remove non-digits
+                    .let { num ->
+                        if (num.startsWith("+84")) {
+                            "0" + num.substring(3)
+                        } else if (num.startsWith("84") && num.length >= 11) {
+                            "0" + num.substring(2)
+                        } else {
+                            num
+                        }
+                    }
+
+                Log.d(TAG, "📱 Original phone: $phoneNumber → Cleaned: $extraCleanedPhone")
+
+                val subscription = if (selectedSim >= 0) {
+                    try {
+                        val subscriptionManager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
+                        subscriptionManager.getActiveSubscriptionInfo(selectedSim)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Cannot get subscription info: ${e.message}")
+                        null
+                    }
+                } else null
+
+                val smsManagers = mutableListOf<SmsManager>()
+
+                if (selectedSim >= 0 && subscription != null) {
+                    try {
+                        val simSpecificManager = SmsManager.getSmsManagerForSubscriptionId(subscription.subscriptionId)
+                        smsManagers.add(simSpecificManager)
+                        Log.d(TAG, "📱 Added SIM-specific manager for subscription: ${subscription.subscriptionId}")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Cannot create SIM-specific manager: ${e.message}")
                     }
                 }
-            
-            Log.d(TAG, "📱 Original phone: $phoneNumber → Cleaned: $extraCleanedPhone")
-            
-            // Get SIM manager info for debugging
-            val subscription = if (selectedSim >= 0) {
-                try {
-                    val subscriptionManager = getSystemService(Context.TELEPHONY_SUBSCRIPTION_SERVICE) as SubscriptionManager
-                    subscriptionManager.getActiveSubscriptionInfo(selectedSim)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Cannot get subscription info: ${e.message}")
-                    null
-                }
-            } else null
-            
-            // Try multiple SIM managers based on selection
-            val smsManagers = mutableListOf<SmsManager>()
-            
-            if (selectedSim >= 0 && subscription != null) {
-                try {
-                    val simSpecificManager = SmsManager.getSmsManagerForSubscriptionId(subscription.subscriptionId)
-                    smsManagers.add(simSpecificManager)
-                    Log.d(TAG, "📱 Added SIM-specific manager for subscription: ${subscription.subscriptionId}")
-                } catch (e: Exception) {
-                    Log.w(TAG, "Cannot create SIM-specific manager: ${e.message}")
-                }
-            }
-            
-            // Always add default manager as fallback
-            smsManagers.add(SmsManager.getDefault())
-            
-            // Chỉ sử dụng định dạng 0xxx, không thử +84
-            val phoneFormats = listOf(
-                extraCleanedPhone, // Đã được clean và đảm bảo định dạng 0xxx
-                phoneNumber.trim().let { original ->
-                    // Đảm bảo original cũng ở định dạng 0xxx
-                    if (original.startsWith("+84")) {
-                        "0" + original.substring(3)
-                    } else if (original.startsWith("84") && original.length >= 11) {
-                        "0" + original.substring(2)
-                    } else {
-                        original
+
+                smsManagers.add(SmsManager.getDefault())
+
+                val phoneFormats = listOf(
+                    extraCleanedPhone,
+                    phoneNumber.trim().let { original ->
+                        if (original.startsWith("+84")) {
+                            "0" + original.substring(3)
+                        } else if (original.startsWith("84") && original.length >= 11) {
+                            "0" + original.substring(2)
+                        } else {
+                            original
+                        }
                     }
-                }
-            ).distinct().filter { it.startsWith("0") } // Chỉ giữ số bắt đầu bằng 0
-            
-            Log.d(TAG, "🚀 Sending SMS to: $phoneNumber → $extraCleanedPhone")
-            Log.d(TAG, "📱 Phone formats to try: $phoneFormats")
-            Log.d(TAG, "📱 Will try ${smsManagers.size} managers with ${phoneFormats.size} formats = ${smsManagers.size * phoneFormats.size} total attempts")
-            
-            // Create all attempts
-            val attempts = mutableListOf<SmsAttempt>()
-            var attemptNumber = 1
-            val maxAttempts = smsManagers.size * phoneFormats.size
-            
-            for ((managerIndex, smsManager) in smsManagers.withIndex()) {
-                for ((formatIndex, phoneFormat) in phoneFormats.withIndex()) {
-                    attempts.add(
-                        SmsAttempt(
-                            requestId = requestId,
-                            phoneNumber = extraCleanedPhone,
-                            message = message,
-                            customer = customer,
-                            smsManager = smsManager,
-                            managerIndex = managerIndex + 1,
-                            phoneFormat = phoneFormat,
-                            formatIndex = formatIndex,
-                            attemptNumber = attemptNumber,
-                            maxAttempts = maxAttempts,
-                            continuation = continuation
+                ).distinct().filter { it.startsWith("0") }
+
+                Log.d(TAG, "🚀 Sending SMS to: $phoneNumber → $extraCleanedPhone")
+                Log.d(TAG, "📱 Phone formats to try: $phoneFormats")
+                Log.d(TAG, "📱 Will try ${smsManagers.size} managers with ${phoneFormats.size} formats = ${smsManagers.size * phoneFormats.size} total attempts")
+
+                val attempts = mutableListOf<SmsAttempt>()
+                var attemptNumber = 1
+                val maxAttempts = smsManagers.size * phoneFormats.size
+
+                for ((managerIndex, smsManager) in smsManagers.withIndex()) {
+                    for ((formatIndex, phoneFormat) in phoneFormats.withIndex()) {
+                        attempts.add(
+                            SmsAttempt(
+                                requestId = requestId,
+                                phoneNumber = extraCleanedPhone,
+                                message = message,
+                                customer = customer,
+                                smsManager = smsManager,
+                                managerIndex = managerIndex + 1,
+                                phoneFormat = phoneFormat,
+                                formatIndex = formatIndex,
+                                attemptNumber = attemptNumber,
+                                maxAttempts = maxAttempts,
+                                continuation = continuation
+                            )
                         )
-                    )
-                    attemptNumber++
-                }
-            }
-            
-            // Store attempts in queue
-            attemptQueue[requestId] = attempts
-            
-            // Store continuation for later use
-            pendingSmsResults[requestId] = continuation
-            Log.d(TAG, "💾 Stored continuation for requestId: $requestId")
-            
-            // Start with first attempt
-            executeNextAttempt(requestId)
-            
-            // Set up timeout mechanism
-            CoroutineScope(Dispatchers.IO).launch {
-                delay(30000) // 30 second timeout
-                if (pendingSmsResults.containsKey(requestId)) {
-                    attemptQueue.remove(requestId)
-                    activeAttempts.remove(requestId)
-                    val timeoutContinuation = pendingSmsResults.remove(requestId)
-                    if (timeoutContinuation?.isActive == true) {
-                        Log.e(TAG, "⏰ SMS sending timeout after 30 seconds for requestId: $requestId")
-                        timeoutContinuation.resume(false)
+                        attemptNumber++
                     }
                 }
+
+                attemptQueue[requestId] = attempts
+                pendingSmsResults[requestId] = continuation
+                Log.d(TAG, "💾 Stored continuation for requestId: $requestId")
+
+                executeNextAttempt(requestId)
+
+                CoroutineScope(Dispatchers.IO).launch {
+                    delay(30000)
+                    if (pendingSmsResults.containsKey(requestId)) {
+                        attemptQueue.remove(requestId)
+                        activeAttempts.remove(requestId)
+                        val timeoutContinuation = pendingSmsResults.remove(requestId)
+                        if (timeoutContinuation?.isActive == true) {
+                            Log.e(TAG, "⏰ SMS sending timeout after 30 seconds for requestId: $requestId")
+                            timeoutContinuation.resume(false)
+                        }
+                    }
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "💥 Critical SMS sending error", e)
+                continuation.resume(false)
             }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "💥 Critical SMS sending error", e)
-            continuation.resume(false)
         }
     }
-    
+
+
     private fun executeNextAttempt(requestId: String) {
         val queue = attemptQueue[requestId]
         if (queue.isNullOrEmpty()) {
             Log.e(TAG, "❌ No more attempts available for $requestId")
+            
+            // Lấy attempt cuối cùng từ activeAttempts để thông báo thất bại
+            val lastAttempt = activeAttempts[requestId]
+            if (lastAttempt != null) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    handleSendFailure(lastAttempt.customer, lastAttempt.attemptNumber)
+                }
+            }
             return
         }
         
