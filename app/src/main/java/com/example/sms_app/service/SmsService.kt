@@ -362,12 +362,27 @@ class SmsService : Service() {
 
             serviceScope.launch {
                 try {
-                    withTimeout(10 * 60 * 1000L) {
+                    // Tính timeout động: 30 giây/khách hàng + 5 phút buffer, tối thiểu 10 phút
+                    val estimatedTimePerCustomer = 30 * 1000L // 30 giây
+                    val bufferTime = 5 * 60 * 1000L // 5 phút buffer
+                    val minTimeout = 10 * 60 * 1000L // Tối thiểu 10 phút
+                    val dynamicTimeout = maxOf(
+                        minTimeout,
+                        (customers.size * estimatedTimePerCustomer) + bufferTime
+                    )
+
+                    Log.d(TAG, "⏰ Timeout được tính: ${dynamicTimeout / 1000 / 60} phút cho ${customers.size} khách hàng")
+
+                    withTimeout(dynamicTimeout) {
                         sendSmsToCustomers(customers, template.content)
                     }
                 } catch (e: TimeoutCancellationException) {
-                    Log.e(TAG, "⏰ SMS sending timeout after 10 minutes")
-                    sendCompletionBroadcast("⏰ Timeout: Quá trình gửi SMS bị dừng sau 10 phút")
+                    val timeoutMinutes = (e.message?.let {
+                        // Extract timeout from exception if possible
+                        Regex("(\\d+)").find(it)?.value?.toLongOrNull()?.div(1000)?.div(60)
+                    } ?: 0)
+                    Log.e(TAG, "⏰ SMS sending timeout after $timeoutMinutes minutes for ${customers.size} customers")
+                    sendCompletionBroadcast("⏰ Timeout: Quá trình gửi SMS bị dừng sau $timeoutMinutes phút (${customers.size} khách hàng)")
                     stopSelf()
                 } catch (e: Exception) {
                     Log.e(TAG, "💥 Critical error in SMS sending", e)
@@ -384,6 +399,9 @@ class SmsService : Service() {
 
     private suspend fun sendSmsToCustomers(customers: List<Customer>, templateContent: String) {
         try {
+            // Khởi tạo biến đếm tin nhắn
+            var sentMessages = 0
+            val totalMessages = customers.size
 
             // Gửi broadcast ban đầu để UI biết tổng số người cần gửi
             sendProgressBroadcast(0, totalToSend, "Bắt đầu gửi tin nhắn...")
@@ -453,13 +471,6 @@ class SmsService : Service() {
                                 delay(retryDelaySeconds * 1000L)
                             }
 
-                            // Nếu đây là lần retry cuối cùng mà vẫn thất bại, dừng toàn bộ quá trình
-                            if (retryCount == maxRetryAttempts - 1) {
-                                Log.e(TAG, "❌ Đã hết số lần thử cho ${customer.name}")
-                                handleSendFailure(customer, maxRetryAttempts)
-                                return@sendSmsToCustomers // Thoát khỏi toàn bộ quá trình gửi
-                            }
-
                             if (shouldSendParallel && currentIndex < customers.size - 1) {
                                 val nextCustomer = customers[currentIndex + 1]
                                 val nextMessage = formatMessage(templateContent, nextCustomer)
@@ -490,32 +501,35 @@ class SmsService : Service() {
                                 }
 
                             } else {
-                                success = sendSmsWithDeliveryReport(customer.phoneNumber, message, selectedSim, customer)
+                                val sentCount = sendSmsToAllPhoneNumbers(customer, message, selectedSim)
+                                sentMessages += sentCount
+                                success = sentCount > 0
+
+                                // Cập nhật progress theo số tin nhắn đã gửi
+                                sendProgressBroadcast(sentMessages, totalMessages, "Đã gửi $sentMessages/$totalMessages tin nhắn")
                             }
 
                             if (!success) {
                                 retryCount++
                                 totalRetries++
-                                
-                                // Nếu đã hết số lần thử, dừng ngay
-                                if (retryCount >= maxRetryAttempts) {
-                                    Log.e(TAG, "❌ Thất bại sau ${retryCount} lần thử cho ${customer.name}")
-                                    handleSendFailure(customer, retryCount)
-                                    return@sendSmsToCustomers
-                                }
+                                Log.d(TAG, "❌ Thất bại lần ${retryCount}/${maxRetryAttempts} cho ${customer.name}")
                             }
                         } catch (e: Exception) {
-                            Log.e(TAG, "❌ Lỗi khi gửi SMS: ${e.message}")
+                            Log.e(TAG, "❌ Lỗi khi gửi SMS cho ${customer.name}: ${e.message}")
                             retryCount++
                             totalRetries++
-                            
-                            // Nếu exception xảy ra và đã hết số lần thử, dừng ngay
-                            if (retryCount >= maxRetryAttempts) {
-                                handleSendFailure(customer, retryCount, e.message)
-                                return@sendSmsToCustomers
-                            }
                             delay(retryDelaySeconds * 1000L)
                         }
+                    }
+
+                    // Xử lý sau khi hết retry - DỪNG TOÀN BỘ
+                    if (!success) {
+                        Log.e(TAG, "❌ Không thể gửi SMS cho ${customer.name} sau ${maxRetryAttempts} lần thử - DỪNG TOÀN BỘ")
+
+                        // Gọi logic nút "Dừng gửi" - dừng toàn bộ quá trình
+                        val errorMessage = "❌ Dừng gửi SMS do không thể gửi tới ${customer.name} sau ${maxRetryAttempts} lần thử"
+                        handleSendFailure(customer, maxRetryAttempts, errorMessage)
+                        return@sendSmsToCustomers // Thoát khỏi toàn bộ quá trình gửi
                     }
 
                     if (success) {
@@ -704,8 +718,8 @@ class SmsService : Service() {
                 } catch (e: Exception) {
                     Log.e(TAG, "💥 Error processing customer ${customer.name} (${customer.phoneNumber})", e)
                     
-                    // Dừng ngay khi có lỗi và gửi thông báo lỗi
-                    val errorMsg = "Lỗi gửi SMS cho ${customer.name}: ${e.message}"
+                    // Dừng ngay khi có lỗi nghiêm trọng và gửi thông báo lỗi
+                    val errorMsg = "Lỗi nghiêm trọng gửi SMS cho ${customer.name}: ${e.message}"
                     Log.e(TAG, errorMsg)
                     handleSendFailure(customer, maxRetryAttempts, errorMsg)
                     return@sendSmsToCustomers // Thoát khỏi hàm sendSmsToCustomers ngay lập tức
@@ -805,19 +819,22 @@ class SmsService : Service() {
             String.format(ERROR_RETRY_FAILED, customer.name, attempts)
         }
         Log.e(TAG, "❌ $errorMessage")
-        
-        // Dừng toàn bộ tiến trình gửi
+
+        // LUÔN LUÔN dừng service khi có lỗi - giống như nhấn nút "Dừng gửi"
+        Log.e(TAG, "🛑 Stopping service due to SMS failure - same as 'Stop' button")
+
+        // Đặt isRunning = false để dừng tất cả loop
         isRunning = false
-        
-        // Gửi thông báo lỗi
+
+        // Gửi completion broadcast với thông báo lỗi
         sendCompletionBroadcast(errorMessage)
-        
+
         // Dừng service
         stopSelf()
-        
+
         // Hủy tất cả coroutine đang chạy
         serviceJob?.cancel()
-        
+
         // Clear tất cả pending operations
         pendingSmsResults.values.forEach { it.cancel() }
         pendingSmsResults.clear()
@@ -959,7 +976,8 @@ class SmsService : Service() {
             val lastAttempt = activeAttempts[requestId]
             if (lastAttempt != null) {
                 CoroutineScope(Dispatchers.IO).launch {
-                    handleSendFailure(lastAttempt.customer, lastAttempt.attemptNumber)
+                    // Dừng service cho lỗi delivery timeout
+                    handleSendFailure(lastAttempt.customer, lastAttempt.attemptNumber, "Delivery timeout")
                 }
             }
             return
@@ -1779,4 +1797,48 @@ class SmsService : Service() {
         sendBroadcast(intent)
     }
 
-} 
+    /**
+     * Gửi SMS đến tất cả số điện thoại của khách hàng
+     * Trả về số tin nhắn đã gửi thành công
+     */
+    private suspend fun sendSmsToAllPhoneNumbers(customer: Customer, message: String, selectedSim: Int): Int {
+        val phoneNumbers = customer.phoneNumber.split(",").map { it.trim() }.filter { it.isNotBlank() }
+
+        if (phoneNumbers.isEmpty()) {
+            Log.w(TAG, "❌ Không có số điện thoại hợp lệ cho khách hàng ${customer.name}")
+            return 0
+        }
+
+        Log.d(TAG, "📱 Gửi SMS đến ${phoneNumbers.size} số điện thoại cho khách hàng ${customer.name}")
+
+        var successCount = 0
+
+        for ((index, phoneNumber) in phoneNumbers.withIndex()) {
+            try {
+                Log.d(TAG, "📱 Gửi SMS ${index + 1}/${phoneNumbers.size} đến số: $phoneNumber")
+
+                val success = sendSmsWithDeliveryReport(phoneNumber, message, selectedSim, customer)
+
+                if (success) {
+                    successCount++
+                    Log.d(TAG, "✅ Gửi thành công SMS ${index + 1}/${phoneNumbers.size} đến $phoneNumber")
+                } else {
+                    Log.e(TAG, "❌ Gửi thất bại SMS ${index + 1}/${phoneNumbers.size} đến $phoneNumber")
+                }
+
+                // Thêm delay nhỏ giữa các SMS để tránh spam
+                if (index < phoneNumbers.size - 1) {
+                    delay(1000) // 1 giây delay giữa các SMS
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "❌ Lỗi khi gửi SMS đến $phoneNumber: ${e.message}", e)
+            }
+        }
+
+        Log.d(TAG, "📊 Kết quả gửi SMS cho ${customer.name}: $successCount/${phoneNumbers.size} thành công")
+
+        return successCount
+    }
+
+}

@@ -268,6 +268,7 @@ class ExcelImporter(private val context: Context) {
         Log.d("ExcelImporter", "Starting Excel import from $uri")
         val customers = mutableListOf<Customer>()
         var inputStream: InputStream? = null
+        var customerSequence = 0 // Để tạo ID theo thứ tự
         
         try {
             inputStream = context.contentResolver.openInputStream(uri)
@@ -330,7 +331,7 @@ class ExcelImporter(private val context: Context) {
                 // Đọc dữ liệu từ row - áp dụng deep clean cho tất cả
                 val name = deepCleanExcelData(getCellValueAsString(row.getCell(0)))
                 val idNumber = deepCleanExcelData(getCellValueAsString(row.getCell(1)))
-                val phoneNumber = cleanPhoneNumber(getCellValueAsString(row.getCell(2)))
+                val rawPhoneNumber = getCellValueAsString(row.getCell(2))
                 val address = deepCleanExcelData(getCellValueAsString(row.getCell(3)))
                 val option1 = deepCleanExcelData(getCellValueAsString(row.getCell(4)))
                 val option2 = deepCleanExcelData(getCellValueAsString(row.getCell(5)))
@@ -338,21 +339,25 @@ class ExcelImporter(private val context: Context) {
                 val option4 = deepCleanExcelData(getCellValueAsString(row.getCell(7)))
                 val option5 = deepCleanExcelData(getCellValueAsString(row.getCell(8)))
                 val templateId = getCellValueAsInt(row.getCell(9))
-                
+
                 // Log raw data from Excel for debugging
                 Log.d("ExcelImporter", "Row $rowIndex: Raw data before cleaning")
                 Log.d("ExcelImporter", "  Raw name: '${getCellValueAsString(row.getCell(0))}'")
-                Log.d("ExcelImporter", "  Raw phone: '${getCellValueAsString(row.getCell(2))}'")
-                
-                // Log cleaned data
-                Log.d("ExcelImporter", "Row $rowIndex: Cleaned data")
-                Log.d("ExcelImporter", "  Cleaned name: '$name'")
-                Log.d("ExcelImporter", "  Cleaned phone: '$phoneNumber'")
-                
-                // Chỉ cần có số điện thoại là đủ để import
-                if (phoneNumber.isBlank()) {
+                Log.d("ExcelImporter", "  Raw phone: '$rawPhoneNumber'")
+
+                // Xử lý nhiều số điện thoại cách nhau bởi dấu phẩy
+                val phoneNumbers = if (rawPhoneNumber.contains(",")) {
+                    rawPhoneNumber.split(",").map { it.trim() }.filter { it.isNotBlank() }
+                } else {
+                    listOf(rawPhoneNumber.trim()).filter { it.isNotBlank() }
+                }
+
+                Log.d("ExcelImporter", "Row $rowIndex: Found ${phoneNumbers.size} phone numbers: $phoneNumbers")
+
+                // Nếu không có số điện thoại nào, bỏ qua dòng này
+                if (phoneNumbers.isEmpty() || phoneNumbers.all { it.isBlank() }) {
                     skippedRows++
-                    Log.d("ExcelImporter", "Row $rowIndex: SKIPPED - phone number is empty")
+                    Log.d("ExcelImporter", "Row $rowIndex: SKIPPED - no valid phone numbers found")
                     consecutiveEmptyRows++
                     if (consecutiveEmptyRows >= 3) {
                         Log.d("ExcelImporter", "Found 3 consecutive empty rows, stopping import")
@@ -360,37 +365,38 @@ class ExcelImporter(private val context: Context) {
                     }
                     continue
                 }
-                
+
                 consecutiveEmptyRows = 0 // Reset counter khi tìm thấy dữ liệu
-                
-                // Chỉ clean phone number cơ bản, không validate
-                val cleanedPhone = phoneNumber.trim()
-                
-                // Create customer object with UUID-based ID to ensure uniqueness
-                val customer = Customer(
-                    id = "customer_${java.util.UUID.randomUUID()}",
-                    name = name.trim(),
-                    idNumber = idNumber.trim(),
-                    phoneNumber = cleanedPhone,
-                    address = address.trim(),
-                    option1 = option1.trim(),
-                    option2 = option2.trim(),
-                    option3 = option3.trim(),
-                    option4 = option4.trim(),
-                    option5 = option5.trim(),
-                    isSelected = false,
-                    carrier = determineCarrier(cleanedPhone),
-                    templateNumber = templateId
-                )
-                
-                // Chỉ cần có số điện thoại là thêm vào danh sách
-                if (customer.phoneNumber.isNotBlank()) {
-                    customers.add(customer)
-                    validCustomersFound++
-                    Log.d("ExcelImporter", "Row $rowIndex: ADDED customer: '${customer.name}' with phone '${customer.phoneNumber}'")
-                } else {
-                    skippedRows++
-                    Log.w("ExcelImporter", "Row $rowIndex: SKIPPED - Customer has no phone number")
+
+                // Tạo một khách hàng cho mỗi số điện thoại
+                phoneNumbers.forEachIndexed { phoneIndex, phone ->
+                    val cleanedPhone = cleanPhoneNumber(phone)
+
+                    if (cleanedPhone.isNotBlank()) {
+                        // Create customer object with sequential ID to preserve import order
+                        customerSequence++
+                        val customer = Customer(
+                            id = "customer_${System.currentTimeMillis()}_${customerSequence.toString().padStart(6, '0')}",
+                            name = name.trim(),
+                            idNumber = idNumber.trim(),
+                            phoneNumber = cleanedPhone,
+                            address = address.trim(),
+                            option1 = option1.trim(),
+                            option2 = option2.trim(),
+                            option3 = option3.trim(),
+                            option4 = option4.trim(),
+                            option5 = option5.trim(),
+                            isSelected = false,
+                            carrier = determineCarrier(cleanedPhone),
+                            templateNumber = templateId
+                        )
+
+                        customers.add(customer)
+                        validCustomersFound++
+                        Log.d("ExcelImporter", "Row $rowIndex, Phone ${phoneIndex + 1}: ADDED customer: '${customer.name}' with phone '${customer.phoneNumber}'")
+                    } else {
+                        Log.w("ExcelImporter", "Row $rowIndex, Phone ${phoneIndex + 1}: SKIPPED - Invalid phone number: '$phone'")
+                    }
                 }
             }
             

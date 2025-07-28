@@ -27,6 +27,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -43,6 +44,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.sms_app.data.MessageTemplate
 
@@ -220,7 +222,7 @@ fun MainScreen(
                 .fillMaxSize()
         ) {
             val headers = listOf("tên khách hàng", "số điện thoại", "chọn", "xóa")
-            val weights = listOf(3f, 2f, 1f, 1f)
+            val weights = listOf(2.5f, 2.5f, 1f, 1f) // Tăng weight cho cột số điện thoại để hiển thị đầy đủ
             // Định nghĩa màu chung cho tên khách hàng
             val customerNameColor = Color.Blue
             HorizontalDivider()
@@ -345,9 +347,16 @@ fun MainScreen(
                         )
 
                         Text(
-                            customer.phoneNumber, modifier = Modifier
+                            customer.phoneNumber,
+                            modifier = Modifier
                                 .weight(weights[1]),
-                            style = TextStyle(textAlign = TextAlign.Center)
+                            style = TextStyle(
+                                textAlign = TextAlign.Center,
+                                fontSize = 13.sp // Font size nhỏ hơn để đảm bảo hiển thị đầy đủ số điện thoại
+                            ),
+                            maxLines = 1, // Hiển thị trên 1 dòng
+                            overflow = TextOverflow.Ellipsis, // Hiển thị ... nếu quá dài
+                            softWrap = false // Không wrap text
                         )
 
                         Checkbox(

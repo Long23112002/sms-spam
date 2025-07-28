@@ -60,7 +60,8 @@ class MainViewModel @Inject constructor(
     }
 
     fun sync() = viewModelScope.launch(Dispatchers.IO) {
-        _customers.postValue(smsRepository.getCustomers().sortedBy { it.id })
+        // Không sort để giữ nguyên thứ tự import từ Excel
+        _customers.postValue(smsRepository.getCustomers())
     }
 
     fun delete(customer: Customer) = viewModelScope.launch(Dispatchers.IO) {
@@ -126,11 +127,14 @@ class MainViewModel @Inject constructor(
                     // Lấy danh sách khách hàng hiện tại
                     val currentCustomers = smsRepository.getCustomers()
 
-                    // Cho phép import tất cả khách hàng, bao gồm cả trùng lặp
+                    // Thêm khách hàng mới theo đúng thứ tự import từ Excel
+                    // Import customers sẽ được thêm vào cuối danh sách hiện tại nhưng giữ nguyên thứ tự từ Excel
                     val allCustomers = currentCustomers + importedCustomers
                     val actualNewCustomers = importedCustomers.size
 
                     smsRepository.saveCustomers(allCustomers)
+
+                    android.util.Log.d("MainViewModel", "📋 Import order preserved: ${importedCustomers.size} customers added in Excel order")
 
                     val message = "Đã nhập thành công ${actualNewCustomers} khách hàng từ Excel (bao gồm cả trùng lặp)"
 
