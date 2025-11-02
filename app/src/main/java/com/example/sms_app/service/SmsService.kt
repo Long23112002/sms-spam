@@ -43,15 +43,12 @@ class SmsService : Service() {
     private lateinit var smsResultReceiver: BroadcastReceiver
     private lateinit var smsDeliveryReceiver: BroadcastReceiver
     private val pendingSmsResults = mutableMapOf<String, kotlinx.coroutines.CancellableContinuation<Boolean>>()
-    private val multipartMessageTracker = mutableMapOf<String, MutableSet<String>>() // Track parts of multipart messages
     private val pendingSmsDeliveries = mutableMapOf<String, Customer>()
     private var isRunning = false
     private var totalSent = 0
     private var totalToSend = 0
     private var currentTemplateId = 0
     private var intervalSeconds = 0
-    private var maxRetryAttempts = 0
-    private var retryDelaySeconds = 0
     private var isSendingMessages = false
     private var currentProgress = 0
     private var totalMessageCount = 0
@@ -66,7 +63,7 @@ class SmsService : Service() {
         // Error message constants
         private const val ERROR_NO_CUSTOMERS = "Bạn chưa chọn khách hàng nào để gửi."
         private const val ERROR_NO_SIM = "Thiết bị chưa lắp SIM, vui lòng kiểm tra lại."
-        private const val ERROR_RETRY_FAILED = "Gửi tới khách hàng %s thất bại sau %d lần thử."
+
 
         const val ACTION_PROGRESS_UPDATE = "com.example.sms_app.ACTION_PROGRESS_UPDATE"
         const val ACTION_SMS_COMPLETED = "com.example.sms_app.ACTION_SMS_COMPLETED"
@@ -79,8 +76,6 @@ class SmsService : Service() {
         const val EXTRA_CUSTOMER_ID = "customer_id"
         const val EXTRA_TEMPLATE_ID = "template_id"
         const val EXTRA_INTERVAL_SECONDS = "interval_seconds"
-        const val EXTRA_MAX_RETRY = "max_retry"
-        const val EXTRA_RETRY_DELAY = "retry_delay"
         const val EXTRA_SIM_ID = "sim_id"
         const val EXTRA_SMS_COUNT = "sms_count"
 
@@ -89,23 +84,7 @@ class SmsService : Service() {
         const val SMS_DELIVERED_ACTION = "com.example.sms_app.SMS_DELIVERED"
     }
 
-    data class SmsAttempt(
-        val requestId: String,
-        val phoneNumber: String,
-        val message: String,
-        val customer: Customer,
-        val smsManager: SmsManager,
-        val managerIndex: Int,
-        val phoneFormat: String,
-        val formatIndex: Int,
-        val attemptNumber: Int,
-        val maxAttempts: Int,
-        val continuation: CancellableContinuation<Boolean>
-    )
 
-    // Global attempt tracking
-    private val activeAttempts = mutableMapOf<String, SmsAttempt>()
-    private val attemptQueue = mutableMapOf<String, MutableList<SmsAttempt>>()
     @RequiresPermission(Manifest.permission.READ_PHONE_STATE)
     override fun onCreate() {
         super.onCreate()
@@ -165,10 +144,8 @@ class SmsService : Service() {
 
                     currentTemplateId = intent.getIntExtra(EXTRA_TEMPLATE_ID, 1)
                     intervalSeconds = intent.getIntExtra(EXTRA_INTERVAL_SECONDS, 25)
-                    maxRetryAttempts = intent.getIntExtra(EXTRA_MAX_RETRY, 3)
-                    retryDelaySeconds = intent.getIntExtra(EXTRA_RETRY_DELAY, 10)
 
-                    Log.d(TAG, "📋 Loaded settings: templateId=$currentTemplateId, interval=$intervalSeconds, maxRetry=$maxRetryAttempts, retryDelay=$retryDelaySeconds")
+                    Log.d(TAG, "📋 Loaded settings: templateId=$currentTemplateId, interval=$intervalSeconds")
 
                     // Khởi tạo notification với mức độ ưu tiên cao hơn
                     try {
@@ -226,7 +203,6 @@ class SmsService : Service() {
         pendingSmsResults.values.forEach { it.cancel() }
         pendingSmsResults.clear()
         pendingSmsDeliveries.clear()
-        multipartMessageTracker.clear()
         isRunning = false
     }
 
@@ -406,8 +382,7 @@ class SmsService : Service() {
             // Gửi broadcast ban đầu để UI biết tổng số người cần gửi
             sendProgressBroadcast(0, totalToSend, "Bắt đầu gửi tin nhắn...")
 
-            var totalRetries = 0
-            val maxTotalRetries = maxRetryAttempts * 3
+
 
 
             val initialDelay = intervalSeconds * 1000L
@@ -462,73 +437,56 @@ class SmsService : Service() {
                     }
 
                     var success = false
-                    var retryCount = 0
 
-                    while (!success && retryCount < maxRetryAttempts && totalRetries < maxTotalRetries && isRunning) {
-                        try {
-                            if (retryCount > 0) {
-                                Log.d(TAG, "↻ Thử lại lần ${retryCount + 1}/${maxRetryAttempts} cho ${customer.name}")
-                                delay(retryDelaySeconds * 1000L)
+                    try {
+                        if (shouldSendParallel && currentIndex < customers.size - 1) {
+                            val nextCustomer = customers[currentIndex + 1]
+                            val nextMessage = formatMessage(templateContent, nextCustomer)
+                            val (sim1, sim2) = smsRepository.getDualSimIds()
+
+                            val results = coroutineScope {
+                                val job1 = async { sendSmsWithDeliveryReport(customer.phoneNumber, message, sim1, customer) }
+                                val job2 = async { sendSmsWithDeliveryReport(nextCustomer.phoneNumber, nextMessage, sim2, nextCustomer) }
+                                job1.await() to job2.await()
+                            }
+                            val (success1, success2) = results
+                            success = success1 && success2
+
+                            if (success1) {
+                                deleteCustomerAfterSuccessfulSend(customer)
+                                val forceUpdatedCount1 = smsRepository.forceRefreshSmsCount(sim1)
+                                sendSmsCountUpdateBroadcast(sim1, forceUpdatedCount1)
+                            }
+                            if (success2) {
+                                deleteCustomerAfterSuccessfulSend(nextCustomer)
+                                val forceUpdatedCount2 = smsRepository.forceRefreshSmsCount(sim2)
+                                sendSmsCountUpdateBroadcast(sim2, forceUpdatedCount2)
                             }
 
-                            if (shouldSendParallel && currentIndex < customers.size - 1) {
-                                val nextCustomer = customers[currentIndex + 1]
-                                val nextMessage = formatMessage(templateContent, nextCustomer)
-                                val (sim1, sim2) = smsRepository.getDualSimIds()
-
-
-                                val results = coroutineScope {
-                                    val job1 = async { sendSmsWithDeliveryReport(customer.phoneNumber, message, sim1, customer) }
-                                    val job2 = async { sendSmsWithDeliveryReport(nextCustomer.phoneNumber, nextMessage, sim2, nextCustomer) }
-                                    job1.await() to job2.await()
-                                }
-                                val (success1, success2) = results
-                                success = success1 && success2
-
-                                if (success1) {
-                                    deleteCustomerAfterSuccessfulSend(customer)
-                                    val forceUpdatedCount1 = smsRepository.forceRefreshSmsCount(sim1)
-                                    sendSmsCountUpdateBroadcast(sim1, forceUpdatedCount1)
-                                }
-                                if (success2) {
-                                    deleteCustomerAfterSuccessfulSend(nextCustomer)
-                                    val forceUpdatedCount2 = smsRepository.forceRefreshSmsCount(sim2)
-                                    sendSmsCountUpdateBroadcast(sim2, forceUpdatedCount2)
-                                }
-
-                                if (success) {
-                                    currentIndex += 2
-                                }
-
-                            } else {
-                                val sentCount = sendSmsToAllPhoneNumbers(customer, message, selectedSim)
-                                sentMessages += sentCount
-                                success = sentCount > 0
-
-                                // Cập nhật progress theo số tin nhắn đã gửi
-                                sendProgressBroadcast(sentMessages, totalMessages, "Đã gửi $sentMessages/$totalMessages tin nhắn")
+                            if (success) {
+                                currentIndex += 2
                             }
 
-                            if (!success) {
-                                retryCount++
-                                totalRetries++
-                                Log.d(TAG, "❌ Thất bại lần ${retryCount}/${maxRetryAttempts} cho ${customer.name}")
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "❌ Lỗi khi gửi SMS cho ${customer.name}: ${e.message}")
-                            retryCount++
-                            totalRetries++
-                            delay(retryDelaySeconds * 1000L)
+                        } else {
+                            val sentCount = sendSmsToAllPhoneNumbers(customer, message, selectedSim)
+                            sentMessages += sentCount
+                            success = sentCount > 0
+
+                            // Cập nhật progress theo số tin nhắn đã gửi
+                            sendProgressBroadcast(sentMessages, totalMessages, "Đã gửi $sentMessages/$totalMessages tin nhắn")
                         }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "❌ Lỗi khi gửi SMS cho ${customer.name}: ${e.message}")
+                        success = false
                     }
 
-                    // Xử lý sau khi hết retry - DỪNG TOÀN BỘ
+                    // Xử lý khi gửi thất bại - DỪNG TOÀN BỘ
                     if (!success) {
-                        Log.e(TAG, "❌ Không thể gửi SMS cho ${customer.name} sau ${maxRetryAttempts} lần thử - DỪNG TOÀN BỘ")
+                        Log.e(TAG, "❌ Không thể gửi SMS cho ${customer.name} - DỪNG TOÀN BỘ")
 
                         // Gọi logic nút "Dừng gửi" - dừng toàn bộ quá trình
-                        val errorMessage = "❌ Dừng gửi SMS do không thể gửi tới ${customer.name} sau ${maxRetryAttempts} lần thử"
-                        handleSendFailure(customer, maxRetryAttempts, errorMessage)
+                        val errorMessage = "❌ Dừng gửi SMS do không thể gửi tới ${customer.name}"
+                        handleSendFailure(customer, errorMessage)
                         return@sendSmsToCustomers // Thoát khỏi toàn bộ quá trình gửi
                     }
 
@@ -669,9 +627,9 @@ class SmsService : Service() {
 
                         val failureMessage = if (shouldSendParallel && currentIndex < customers.size - 1) {
                             val nextCustomer = customers[currentIndex + 1]
-                            "❌ Lỗi gửi song song cho ${customer.name} và ${nextCustomer.name} sau $retryCount lần thử - Tiếp tục với người tiếp theo"
+                            "❌ Lỗi gửi song song cho ${customer.name} và ${nextCustomer.name} - Tiếp tục với người tiếp theo"
                         } else {
-                            "❌ Lỗi gửi ${customer.name} (${customer.phoneNumber}) sau $retryCount lần thử - Tiếp tục với người tiếp theo"
+                            "❌ Lỗi gửi ${customer.name} (${customer.phoneNumber}) - Tiếp tục với người tiếp theo"
                         }
                         
                         // KHÔNG xóa customer khi gửi thất bại
@@ -721,7 +679,7 @@ class SmsService : Service() {
                     // Dừng ngay khi có lỗi nghiêm trọng và gửi thông báo lỗi
                     val errorMsg = "Lỗi nghiêm trọng gửi SMS cho ${customer.name}: ${e.message}"
                     Log.e(TAG, errorMsg)
-                    handleSendFailure(customer, maxRetryAttempts, errorMsg)
+                    handleSendFailure(customer, errorMsg)
                     return@sendSmsToCustomers // Thoát khỏi hàm sendSmsToCustomers ngay lập tức
                     
                     Log.e(TAG, "💥 Processing error for ${customer.name}: ${e.message}")
@@ -812,11 +770,11 @@ class SmsService : Service() {
         }
     }
 
-    private suspend fun handleSendFailure(customer: Customer, attempts: Int, error: String? = null) {
+    private suspend fun handleSendFailure(customer: Customer, error: String? = null) {
         val errorMessage = if (error != null) {
-            "Lỗi gửi tới ${customer.name}: $error (sau $attempts lần thử)"
+            "Lỗi gửi tới ${customer.name}: $error"
         } else {
-            String.format(ERROR_RETRY_FAILED, customer.name, attempts)
+            "Gửi SMS tới ${customer.name} thất bại"
         }
         Log.e(TAG, "❌ $errorMessage")
 
@@ -839,7 +797,6 @@ class SmsService : Service() {
         pendingSmsResults.values.forEach { it.cancel() }
         pendingSmsResults.clear()
         pendingSmsDeliveries.clear()
-        multipartMessageTracker.clear()
     }
 
     private suspend fun sendSmsWithDeliveryReport(
@@ -852,7 +809,7 @@ class SmsService : Service() {
         val (isValid, errorMessage) = checkSimAndCustomers()
         if (!isValid) {
             Log.e(TAG, "❌ Không thể gửi SMS: $errorMessage")
-            handleSendFailure(customer, 0, errorMessage)
+            handleSendFailure(customer, errorMessage)
             return false
         }
 
@@ -898,59 +855,69 @@ class SmsService : Service() {
 
                 smsManagers.add(SmsManager.getDefault())
 
-                val phoneFormats = listOf(
-                    extraCleanedPhone,
-                    phoneNumber.trim().let { original ->
-                        if (original.startsWith("+84")) {
-                            "0" + original.substring(3)
-                        } else if (original.startsWith("84") && original.length >= 11) {
-                            "0" + original.substring(2)
-                        } else {
-                            original
-                        }
-                    }
-                ).distinct().filter { it.startsWith("0") }
-
                 Log.d(TAG, "🚀 Sending SMS to: $phoneNumber → $extraCleanedPhone")
-                Log.d(TAG, "📱 Phone formats to try: $phoneFormats")
-                Log.d(TAG, "📱 Will try ${smsManagers.size} managers with ${phoneFormats.size} formats = ${smsManagers.size * phoneFormats.size} total attempts")
 
-                val attempts = mutableListOf<SmsAttempt>()
-                var attemptNumber = 1
-                val maxAttempts = smsManagers.size * phoneFormats.size
-
-                for ((managerIndex, smsManager) in smsManagers.withIndex()) {
-                    for ((formatIndex, phoneFormat) in phoneFormats.withIndex()) {
-                        attempts.add(
-                            SmsAttempt(
-                                requestId = requestId,
-                                phoneNumber = extraCleanedPhone,
-                                message = message,
-                                customer = customer,
-                                smsManager = smsManager,
-                                managerIndex = managerIndex + 1,
-                                phoneFormat = phoneFormat,
-                                formatIndex = formatIndex,
-                                attemptNumber = attemptNumber,
-                                maxAttempts = maxAttempts,
-                                continuation = continuation
-                            )
-                        )
-                        attemptNumber++
-                    }
-                }
-
-                attemptQueue[requestId] = attempts
                 pendingSmsResults[requestId] = continuation
                 Log.d(TAG, "💾 Stored continuation for requestId: $requestId")
 
-                executeNextAttempt(requestId)
+                // Gửi SMS đơn giản không retry
+                val sentPendingIntent = PendingIntent.getBroadcast(
+                    this,
+                    requestId.hashCode(),
+                    Intent(SMS_SENT_ACTION).apply {
+                        putExtra("REQUEST_ID", requestId)
+                        putExtra("PHONE_NUMBER", extraCleanedPhone)
+                        putExtra("CUSTOMER_NAME", customer.name)
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                
+                val deliveredPendingIntent = PendingIntent.getBroadcast(
+                    this,
+                    (requestId + "_DELIVERED").hashCode(),
+                    Intent(SMS_DELIVERED_ACTION).apply {
+                        putExtra("REQUEST_ID", requestId)
+                        putExtra("PHONE_NUMBER", extraCleanedPhone)
+                        putExtra("CUSTOMER_NAME", customer.name)
+                    },
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                
+                val smsManager = smsManagers.firstOrNull() ?: SmsManager.getDefault()
+                
+                if (message.length > 160) {
+                    Log.d(TAG, "📝 Message longer than 160 chars, using divideMessage")
+                    val parts = smsManager.divideMessage(message)
+                    val sentIntents = ArrayList<PendingIntent>()
+                    val deliveredIntents = ArrayList<PendingIntent>()
+                    
+                    for (i in parts.indices) {
+                        sentIntents.add(sentPendingIntent)
+                        deliveredIntents.add(deliveredPendingIntent)
+                    }
+                    
+                    smsManager.sendMultipartTextMessage(
+                        extraCleanedPhone,
+                        null,
+                        parts,
+                        sentIntents,
+                        deliveredIntents
+                    )
+                    Log.d(TAG, "📤 Sending multi-part SMS (${parts.size} parts)")
+                } else {
+                    smsManager.sendTextMessage(
+                        extraCleanedPhone,
+                        null,
+                        message,
+                        sentPendingIntent,
+                        deliveredPendingIntent
+                    )
+                    Log.d(TAG, "📤 Sending single SMS")
+                }
 
                 CoroutineScope(Dispatchers.IO).launch {
                     delay(30000)
                     if (pendingSmsResults.containsKey(requestId)) {
-                        attemptQueue.remove(requestId)
-                        activeAttempts.remove(requestId)
                         val timeoutContinuation = pendingSmsResults.remove(requestId)
                         if (timeoutContinuation?.isActive == true) {
                             Log.e(TAG, "⏰ SMS sending timeout after 30 seconds for requestId: $requestId")
@@ -967,96 +934,7 @@ class SmsService : Service() {
     }
 
 
-    private fun executeNextAttempt(requestId: String) {
-        val queue = attemptQueue[requestId]
-        if (queue.isNullOrEmpty()) {
-            Log.e(TAG, "❌ No more attempts available for $requestId")
-            
-            // Lấy attempt cuối cùng từ activeAttempts để thông báo thất bại
-            val lastAttempt = activeAttempts[requestId]
-            if (lastAttempt != null) {
-                CoroutineScope(Dispatchers.IO).launch {
-                    // Dừng service cho lỗi delivery timeout
-                    handleSendFailure(lastAttempt.customer, lastAttempt.attemptNumber, "Delivery timeout")
-                }
-            }
-            return
-        }
-        
-        val attempt = queue.removeAt(0)
-        activeAttempts[requestId] = attempt
-        
-        Log.d(TAG, "🔧 Executing attempt ${attempt.attemptNumber}/${attempt.maxAttempts}: Manager #${attempt.managerIndex} with phone: ${attempt.phoneFormat}")
-        
-        try {
-            val attemptRequestId = "${requestId}_ATTEMPT_${attempt.attemptNumber}"
-            
-            val sentPendingIntent = PendingIntent.getBroadcast(
-                this,
-                attemptRequestId.hashCode(),
-                Intent(SMS_SENT_ACTION).apply {
-                    putExtra("REQUEST_ID", requestId)
-                    putExtra("ATTEMPT_REQUEST_ID", attemptRequestId)
-                    putExtra("PHONE_NUMBER", attempt.phoneFormat)
-                    putExtra("CUSTOMER_NAME", attempt.customer.name)
-                    putExtra("MANAGER_INDEX", attempt.managerIndex)
-                    putExtra("ATTEMPT_COUNT", attempt.attemptNumber)
-                    putExtra("MAX_ATTEMPTS", attempt.maxAttempts)
-                },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            
-            val deliveredPendingIntent = PendingIntent.getBroadcast(
-                this,
-                (attemptRequestId + "_DELIVERED").hashCode(),
-                Intent(SMS_DELIVERED_ACTION).apply {
-                    putExtra("REQUEST_ID", requestId)
-                    putExtra("PHONE_NUMBER", attempt.phoneFormat)
-                    putExtra("CUSTOMER_NAME", attempt.customer.name)
-                },
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            
-            if (attempt.message.length > 160) {
-                Log.d(TAG, "📝 Message longer than 160 chars, using divideMessage")
-                val parts = attempt.smsManager.divideMessage(attempt.message)
-                val sentIntents = ArrayList<PendingIntent>()
-                val deliveredIntents = ArrayList<PendingIntent>()
-                
-                for (i in parts.indices) {
-                    sentIntents.add(sentPendingIntent)
-                    deliveredIntents.add(deliveredPendingIntent)
-                }
-                
-                attempt.smsManager.sendMultipartTextMessage(
-                    attempt.phoneFormat,
-                    null,
-                    parts,
-                    sentIntents,
-                    deliveredIntents
-                )
-                Log.d(TAG, "📤 Sending multi-part SMS (${parts.size} parts)")
-            } else {
-                attempt.smsManager.sendTextMessage(
-                    attempt.phoneFormat,
-                    null,
-                    attempt.message,
-                    sentPendingIntent,
-                    deliveredPendingIntent
-                )
-                Log.d(TAG, "📤 Sending single SMS")
-            }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "❌ Exception during attempt ${attempt.attemptNumber}: ${e.message}")
-            
-            // Try next attempt after a short delay
-            CoroutineScope(Dispatchers.IO).launch {
-                delay(500)
-                executeNextAttempt(requestId)
-            }
-        }
-    }
+
 
     private fun formatMessage(template: String, customer: Customer): String {
         try {
@@ -1425,22 +1303,14 @@ class SmsService : Service() {
                 when (intent.action) {
                     SMS_SENT_ACTION -> {
                         val requestId = intent.getStringExtra("REQUEST_ID") ?: return
-                        val attemptRequestId = intent.getStringExtra("ATTEMPT_REQUEST_ID") ?: requestId
                         val phoneNumber = intent.getStringExtra("PHONE_NUMBER") ?: "Unknown"
                         val customerName = intent.getStringExtra("CUSTOMER_NAME") ?: "Unknown"
-                        val managerIndex = intent.getIntExtra("MANAGER_INDEX", 0)
-                        val attemptCount = intent.getIntExtra("ATTEMPT_COUNT", 0)
-                        val maxAttempts = intent.getIntExtra("MAX_ATTEMPTS", 0)
                         
                         when (resultCode) {
                             Activity.RESULT_OK -> {
-                                Log.d(TAG, "✅ SMS sent successfully! (Attempt $attemptCount/$maxAttempts, Manager #$managerIndex)")
+                                Log.d(TAG, "✅ SMS sent successfully to $phoneNumber!")
                                 
-                                // Success! Clean up and resume continuation
-                                val attempt = activeAttempts.remove(requestId)
-                                attemptQueue.remove(requestId)
                                 val continuation = pendingSmsResults.remove(requestId)
-                                
                                 if (continuation != null) {
                                     Log.d(TAG, "📤 SMS sent (requestId: $requestId, success: true)")
                                     continuation.resume(true)
@@ -1448,105 +1318,23 @@ class SmsService : Service() {
                                     Log.w(TAG, "⚠️ No continuation found for successful SMS: $requestId")
                                 }
                             }
-                            SmsManager.RESULT_ERROR_GENERIC_FAILURE -> {
-                                Log.e(TAG, "❌ SMS sending failed: Generic failure (Attempt $attemptCount/$maxAttempts, Manager #$managerIndex)")
-                                
-                                // Get additional system information for debugging
-                                val telephonyManager = getSystemService(Context.TELEPHONY_SERVICE) as TelephonyManager
-                                val networkOperator = try {
-                                    telephonyManager.networkOperatorName ?: "Unknown"
-                                } catch (e: Exception) {
-                                    "Error getting operator: ${e.message}"
-                                }
-                                
-                                val simState = try {
-                                    when (telephonyManager.simState) {
-                                        TelephonyManager.SIM_STATE_ABSENT -> "ABSENT"
-                                        TelephonyManager.SIM_STATE_NETWORK_LOCKED -> "NETWORK_LOCKED"
-                                        TelephonyManager.SIM_STATE_PIN_REQUIRED -> "PIN_REQUIRED"
-                                        TelephonyManager.SIM_STATE_PUK_REQUIRED -> "PUK_REQUIRED"
-                                        TelephonyManager.SIM_STATE_READY -> "READY"
-                                        TelephonyManager.SIM_STATE_UNKNOWN -> "UNKNOWN"
-                                        else -> "OTHER"
-                                    }
-                                } catch (e: Exception) {
-                                    "Error getting SIM state: ${e.message}"
-                                }
-
-
-                                // Check if there are more attempts to try
-                                val queue = attemptQueue[requestId]
-                                if (queue != null && queue.isNotEmpty()) {
-                                    // Try next attempt after a short delay
-                                    Log.d(TAG, "🔄 ${queue.size} attempts remaining, trying next...")
-                                    
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        delay(1000) // Wait 1 second before next attempt
-                                        
-                                                                                 executeNextAttempt(requestId)
-                                    }
-                                } else {
-                                    // No more attempts, fail
-                                    Log.e(TAG, "💥 All attempts exhausted. SMS sending failed.")
-                                    
-                                    val attempt = activeAttempts.remove(requestId)
-                                    attemptQueue.remove(requestId)
-                                    val continuation = pendingSmsResults.remove(requestId)
-                                    
-                                    if (continuation != null) {
-                                        Log.d(TAG, "📤 SMS sent (requestId: $requestId, success: false)")
-                                        continuation.resume(false)
-                                    } else {
-                                        Log.w(TAG, "⚠️ No continuation found for failed SMS: $requestId")
-                                    }
-                                }
-                            }
-                            SmsManager.RESULT_ERROR_NO_SERVICE,
-                            SmsManager.RESULT_ERROR_NULL_PDU,
-                            SmsManager.RESULT_ERROR_RADIO_OFF -> {
+                            else -> {
                                 val errorType = when (resultCode) {
+                                    SmsManager.RESULT_ERROR_GENERIC_FAILURE -> "Generic failure"
                                     SmsManager.RESULT_ERROR_NO_SERVICE -> "No service"
                                     SmsManager.RESULT_ERROR_NULL_PDU -> "Null PDU"
                                     SmsManager.RESULT_ERROR_RADIO_OFF -> "Radio off"
                                     else -> "Unknown error $resultCode"
                                 }
                                 
-                                Log.e(TAG, "❌ SMS sending failed: $errorType (Attempt $attemptCount/$maxAttempts, Manager #$managerIndex)")
+                                Log.e(TAG, "❌ SMS sending failed: $errorType to $phoneNumber")
                                 
-                                // For these errors, we should fail immediately as they indicate system issues
-                                val attempt = activeAttempts.remove(requestId)
-                                attemptQueue.remove(requestId)
                                 val continuation = pendingSmsResults.remove(requestId)
-                                
                                 if (continuation != null) {
-                                    Log.d(TAG, "📤 SMS sent (requestId: $requestId, success: false) - System error")
+                                    Log.d(TAG, "📤 SMS sent (requestId: $requestId, success: false)")
                                     continuation.resume(false)
                                 } else {
-                                    Log.w(TAG, "⚠️ No continuation found for failed SMS (system error): $requestId")
-                                }
-                            }
-                            else -> {
-                                Log.e(TAG, "❌ SMS sending failed: Unknown error code $resultCode (Attempt $attemptCount/$maxAttempts, Manager #$managerIndex)")
-                                
-                                // Check if there are more attempts to try
-                                val queue = attemptQueue[requestId]
-                                if (queue != null && queue.isNotEmpty()) {
-                                    Log.d(TAG, "🔄 Unknown error, trying next attempt...")
-                                    
-                                    CoroutineScope(Dispatchers.IO).launch {
-                                        delay(1000)
-                                        executeNextAttempt(requestId)
-                                    }
-                                } else {
-                                    val attempt = activeAttempts.remove(requestId)
-                                    attemptQueue.remove(requestId)
-                                    val continuation = pendingSmsResults.remove(requestId)
-                                    
-                                    if (continuation != null) {
-                                        continuation.resume(false)
-                                    } else {
-                                        Log.w(TAG, "⚠️ No continuation found for failed SMS (unknown error): $requestId")
-                                    }
+                                    Log.w(TAG, "⚠️ No continuation found for failed SMS: $requestId")
                                 }
                             }
                         }
@@ -1771,14 +1559,14 @@ class SmsService : Service() {
             // Đảm bảo broadcast được gửi bằng cách gửi thêm một lần nữa sau một khoảng thời gian ngắn
             Handler(Looper.getMainLooper()).postDelayed({
                 try {
-                    val retryIntent = Intent(ACTION_CUSTOMER_DELETED).apply {
+                    val deleteIntent = Intent(ACTION_CUSTOMER_DELETED).apply {
                         putExtra(EXTRA_CUSTOMER_ID, customer.id)
                         putExtra(EXTRA_MESSAGE, "Đã xóa khách hàng ${customer.name} sau khi gửi SMS thành công")
                         addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES)
                         addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
                     }
-                    sendBroadcast(retryIntent)
-                    applicationContext.sendBroadcast(retryIntent)
+                    sendBroadcast(deleteIntent)
+                    applicationContext.sendBroadcast(deleteIntent)
                     Log.d(TAG, "📢 Gửi lại broadcast xóa khách hàng với ID: ${customer.id}")
                 } catch (e: Exception) {
                     Log.e(TAG, "❌ Lỗi gửi lại broadcast xóa khách hàng", e)

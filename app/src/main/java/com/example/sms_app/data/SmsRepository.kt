@@ -325,7 +325,7 @@ class SmsRepository @Inject constructor (@ApplicationContext context: Context) {
     fun saveAppSettings(settings: AppSettings) {
         val json = gson.toJson(settings)
         prefs.edit().putString(KEY_APP_SETTINGS, json).apply()
-        android.util.Log.d("SmsRepository", "Saved app settings: intervalBetweenSmsSeconds=${settings.intervalBetweenSmsSeconds}, maxRetryAttempts=${settings.maxRetryAttempts}, retryDelaySeconds=${settings.retryDelaySeconds}")
+        android.util.Log.d("SmsRepository", "Saved app settings: intervalBetweenSmsSeconds=${settings.intervalBetweenSmsSeconds}")
     }
 
     fun getAppSettings(): AppSettings {
@@ -336,7 +336,7 @@ class SmsRepository @Inject constructor (@ApplicationContext context: Context) {
         }
         return try {
             val settings = gson.fromJson(json, AppSettings::class.java)
-            android.util.Log.d("SmsRepository", "Loaded app settings: intervalBetweenSmsSeconds=${settings.intervalBetweenSmsSeconds}, maxRetryAttempts=${settings.maxRetryAttempts}, retryDelaySeconds=${settings.retryDelaySeconds}")
+            android.util.Log.d("SmsRepository", "Loaded app settings: intervalBetweenSmsSeconds=${settings.intervalBetweenSmsSeconds}")
             settings
         } catch (e: Exception) {
             android.util.Log.e("SmsRepository", "Error parsing settings, using default", e)

@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -84,7 +85,7 @@ fun MyTopBar(
 
             Spacer(Modifier.width(8.dp))
 
-            // Nút Chọn tệp tin - màu xanh dương
+            // Nút Import - màu tím
             Button(
                 onClick = {
                     onUpload()
@@ -97,12 +98,14 @@ fun MyTopBar(
                 modifier = Modifier.height(50.dp)
             ) {
                 Text(
-                    "Chọn tệp tin",
+                    "Import",
                     color = Color.Magenta,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
+
+
         },
     )
     

@@ -29,8 +29,7 @@ fun SettingsDialog(
     onSave: (AppSettings) -> Unit
 ) {
     var intervalSeconds by remember { mutableStateOf(currentSettings.intervalBetweenSmsSeconds.toString()) }
-    var maxRetry by remember { mutableStateOf(currentSettings.maxRetryAttempts.toString()) }
-    var retryDelay by remember { mutableStateOf(currentSettings.retryDelaySeconds.toString()) }
+
     var minIntervalSeconds by remember { mutableStateOf(currentSettings.minIntervalSeconds.toString()) }
     var maxIntervalSeconds by remember { mutableStateOf(currentSettings.maxIntervalSeconds.toString()) }
 
@@ -103,40 +102,7 @@ fun SettingsDialog(
                         )
                     }
                     
-                    Divider()
-                    
-                    // Retry Settings
-                    SettingSection(
-                        title = "🔄 Cài đặt thử lại khi thất bại",
-                        icon = Icons.Default.Refresh,
-                        iconColor = Color(0xFFFF9800)
-                    ) {
-                        SettingItem(
-                            label = "Số lần thử lại tối đa",
-                            value = maxRetry,
-                            onValueChange = { 
-                                if (it.isEmpty() || (it.toIntOrNull() in 0..10)) {
-                                    maxRetry = it
-                                }
-                            },
-                            icon = Icons.Default.Refresh,
-                            helper = "Số lần thử lại khi gửi SMS thất bại"
-                        )
-                        
-                        SettingItem(
-                            label = "Thời gian chờ giữa các lần thử (giây)",
-                            value = retryDelay,
-                            onValueChange = { 
-                                if (it.isEmpty() || (it.toIntOrNull() != null && it.toInt() >= 1)) {
-                                    retryDelay = it
-                                }
-                            },
-                            icon = Icons.Default.Timer,
-                            helper = "Thời gian chờ trước khi thử lại"
-                        )
-                    }
-                    
-                    Divider()
+
                     
                     // SIM Settings
                     SettingSection(
@@ -528,8 +494,6 @@ fun SettingsDialog(
                     onClick = {
                         val settings = AppSettings(
                             intervalBetweenSmsSeconds = intervalSeconds.toIntOrNull() ?: 25,
-                            maxRetryAttempts = maxRetry.toIntOrNull() ?: 3,
-                            retryDelaySeconds = retryDelay.toIntOrNull() ?: 5,
                             randomizeInterval = false,
                             randomizeContent = false,
                             addRandomEmoji = false,

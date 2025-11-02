@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SettingsBackupRestore
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -25,6 +26,7 @@ enum class MoreVertFunctions(val icon: ImageVector, val text: String) {
     Home(Icons.Filled.Home, "Trang chủ"),
     Support(Icons.Filled.Call, "Hỗ trợ"),
     Filter(Icons.Filled.FilterAlt, "Xóa lặp"),
+    Export(Icons.Filled.FileDownload, "Export Excel"),
     Update(Icons.Filled.CloudDownload, "Cập nhật"),
     Out(Icons.AutoMirrored.Filled.ExitToApp, "Thoát"),
 }
@@ -37,7 +39,8 @@ fun MoreView(
     onRestoreUnsentCustomers: () -> Unit = {},
     onUpdateClick: () -> Unit = {},
     onHomeClick: () -> Unit = {},
-    onSupportClick: () -> Unit = {}
+    onSupportClick: () -> Unit = {},
+    onExportClick: () -> Unit = {}
 ) {
     DropdownMenu(
         expanded = button == BottomButton.MoreVert,
@@ -67,21 +70,17 @@ fun MoreView(
                             onRemoveDuplicates()
                             onDismissRequest()
                         }
-//                        MoreVertFunctions.Random -> {}
-//                        MoreVertFunctions.Previous -> {
-//                            onRestoreUnsentCustomers()
-//                            onDismissRequest()
-//                        }
+                        MoreVertFunctions.Export -> {
+                            onExportClick()
+                            onDismissRequest()
+                        }
                         MoreVertFunctions.Update -> {
                             onUpdateClick()
                             onDismissRequest()
                         }
-//                        MoreVertFunctions.Info -> {}
-//                        MoreVertFunctions.Out -> {
-//                            exitProcess(0)
-//                        }
-//                        MoreVertFunctions.Previous -> TODO()
-                        MoreVertFunctions.Out -> TODO()
+                        MoreVertFunctions.Out -> {
+                            exitProcess(0)
+                        }
                     }
                 }
             )

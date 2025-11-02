@@ -136,6 +136,18 @@ fun MainScreen(
         }
     }
 
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    ) { uri ->
+        uri?.let {
+            mainViewModel.exportToExcel(it, selectedProvider) { msg ->
+                CoroutineScope(Dispatchers.Main).launch {
+                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
 
 
     Scaffold(
@@ -212,6 +224,16 @@ fun MainScreen(
                 },
                 onSearchClick = {
                     showSearchDialog = true
+                },
+                onExportClick = {
+                    val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", java.util.Locale.getDefault())
+                    val timestamp = dateFormat.format(java.util.Date())
+                    val filename = if (selectedProvider == "all") {
+                        "data_all_$timestamp.xlsx"
+                    } else {
+                        "data_${selectedProvider}_$timestamp.xlsx"
+                    }
+                    exportLauncher.launch(filename)
                 }
             )
         }

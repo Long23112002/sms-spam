@@ -42,16 +42,7 @@ class SettingViewModel @Inject constructor(
         sync()
     }
 
-    fun saveRetry(string: String): Job = viewModelScope.launch(Dispatchers.IO) {
-        string.toIntOrNull()?.let {
-            smsRepository.apply {
-                saveAppSettings(
-                    getAppSettings().copy(maxRetryAttempts = it)
-                )
-            }
-        }
-        sync()
-    }
+
 
     fun saveBool(setting: SwitchSetting, bool: Boolean) = viewModelScope.launch(Dispatchers.IO) {
         smsRepository.apply {
@@ -84,7 +75,6 @@ class SettingViewModel @Inject constructor(
     
     fun AppSettings.edit(setting: com.example.sms_app.presentation.component.NumSetting, number: Int): AppSettings = when(setting) {
         com.example.sms_app.presentation.component.NumSetting.Delay -> copy(intervalBetweenSmsSeconds = number)
-        com.example.sms_app.presentation.component.NumSetting.Limit -> copy(maxRetryAttempts = number)
     }
 
 }

@@ -15,6 +15,7 @@ import com.example.sms_app.data.Customer
 import com.example.sms_app.data.SmsRepository
 import com.example.sms_app.service.SmsService
 import com.example.sms_app.utils.ExcelImporter
+import com.example.sms_app.utils.ExcelExporter
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -102,6 +103,47 @@ class MainViewModel @Inject constructor(
 
         sync()
     }
+
+    fun exportToExcel(uri: Uri, selectedProvider: String = "all", onMessage: (String) -> Unit) =
+        viewModelScope.launch(Dispatchers.IO) {
+            val application = getApplication<Application>()
+
+            runCatching {
+                onMessage("Đang xuất dữ liệu ra Excel...")
+
+                val excelExporter = ExcelExporter(application)
+                val allCustomers = smsRepository.getCustomers()
+
+                // Filter customers theo provider giống như trên app
+                val customersToExport = if (selectedProvider == "all") {
+                    allCustomers
+                } else {
+                    allCustomers.filter { customer ->
+                        customer.carrier.lowercase() == selectedProvider.lowercase()
+                    }
+                }
+
+                android.util.Log.d("MainViewModel", "📋 Export: Total customers: ${allCustomers.size}, Filtered for '$selectedProvider': ${customersToExport.size}")
+
+                if (customersToExport.isEmpty()) {
+                    onMessage("❌ Không có khách hàng nào để xuất cho nhà mạng '$selectedProvider'")
+                    return@launch
+                }
+
+                val success = excelExporter.exportCustomers(customersToExport, uri)
+
+                if (success) {
+                    val message = "✅ Đã xuất thành công ${customersToExport.size} khách hàng ra Excel"
+                    onMessage(message)
+                    android.util.Log.d("MainViewModel", "📋 Export summary: ${customersToExport.size} customers exported for provider: $selectedProvider")
+                } else {
+                    onMessage("❌ Lỗi khi xuất file Excel")
+                }
+            }.onFailure {
+                onMessage("❌ Lỗi xuất Excel: ${it.message}")
+                android.util.Log.e("MainViewModel", "Error exporting Excel", it)
+            }
+        }
 
     fun handleExcelFile(uri: Uri, onMessage: (String) -> Unit) =
         viewModelScope.launch(Dispatchers.IO) {

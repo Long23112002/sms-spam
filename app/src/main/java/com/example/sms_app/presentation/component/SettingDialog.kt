@@ -61,17 +61,12 @@ enum class SwitchSetting(val text: String, val default: Boolean) {
 }
 
 enum class NumSetting(val text: String, val default: Int) {
-    Delay("Thời gian chờ", 25),
-    Limit("Giới hạn thất bại liên tiếp", 10);
+    Delay("Thời gian chờ", 25);
 
     fun getValue(appSettings: AppSettings?): String = when (this) {
         Delay -> {
             appSettings?.intervalBetweenSmsSeconds?.toString()
                 ?: default.toString()
-        }
-
-        Limit -> {
-            appSettings?.maxRetryAttempts?.toString() ?: default.toString()
         }
     }
 }
@@ -313,7 +308,7 @@ fun SettingDialog(
             ) {
                 when (item) {
                     NumSetting.Delay -> settingViewModel.saveDelay(it)
-                    NumSetting.Limit -> settingViewModel.saveRetry(it)
+
                 }
 
                 setting = ""

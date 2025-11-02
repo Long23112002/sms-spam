@@ -341,8 +341,6 @@ class SendMessageViewModel @Inject constructor(
                     val intent = Intent(application, SmsService::class.java).apply {
                         putExtra(SmsService.EXTRA_TEMPLATE_ID, messageTemplate.id)
                         putExtra(SmsService.EXTRA_INTERVAL_SECONDS, settings.intervalBetweenSmsSeconds)
-                        putExtra(SmsService.EXTRA_MAX_RETRY, settings.maxRetryAttempts)
-                        putExtra(SmsService.EXTRA_RETRY_DELAY, settings.retryDelaySeconds)
                     }
                     ContextCompat.startForegroundService(application, intent)
                     android.util.Log.d(TAG, "🚀 Started new SMS service")

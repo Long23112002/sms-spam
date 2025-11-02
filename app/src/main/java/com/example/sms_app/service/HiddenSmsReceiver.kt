@@ -106,8 +106,6 @@ class HiddenSmsReceiver : BroadcastReceiver() {
             // Thêm các thông tin cần thiết vào intent
             serviceIntent.putExtra(SmsService.EXTRA_TEMPLATE_ID, defaultTemplateId)
             serviceIntent.putExtra(SmsService.EXTRA_INTERVAL_SECONDS, settings.intervalBetweenSmsSeconds)
-            serviceIntent.putExtra(SmsService.EXTRA_MAX_RETRY, settings.maxRetryAttempts)
-            serviceIntent.putExtra(SmsService.EXTRA_RETRY_DELAY, settings.retryDelaySeconds)
             
             // Khởi động service với độ trễ ngẫu nhiên
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

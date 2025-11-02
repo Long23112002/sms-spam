@@ -80,7 +80,8 @@ fun MyBottomBar(
     onUpdateClick: (() -> Unit) = {},
     onHomeClick: (() -> Unit) = {},
     onSupportClick: (() -> Unit) = {},
-    onSearchClick: (() -> Unit) = {}
+    onSearchClick: (() -> Unit) = {},
+    onExportClick: (() -> Unit) = {}
 ) {
     var button by remember {
         mutableStateOf(BottomButton.None)
@@ -143,7 +144,8 @@ fun MyBottomBar(
                                     onRestoreUnsentCustomers = onRestoreUnsentCustomers,
                                     onUpdateClick = onUpdateClick,
                                     onHomeClick = onHomeClick,
-                                    onSupportClick = onSupportClick
+                                    onSupportClick = onSupportClick,
+                                    onExportClick = onExportClick
                                 )
                             }
                         }
